@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <rect width="128" height="128" rx="24" fill="#2B4C3F"/>
+  <circle cx="64" cy="64" r="50" stroke="#FAF9F6" stroke-width="3" fill="#FAF9F6" fill-opacity="0.08"/>
+  <circle cx="64" cy="64" r="43" stroke="#8FA89B" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <!-- Stylized horse head & neck profile in clean anatomical line art -->
+  <path d="M46 92 C46 72, 52 54, 62 40 L64 31 L69 38 C76 39, 84 45, 88 53 C90 57, 86 62, 81 61 C76 60, 71 56, 67 57 C65 65, 68 78, 72 92" stroke="#FAF9F6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="74" cy="47" r="2" fill="#FAF9F6"/>
+  <!-- Palpation meridian arc -->
+  <path d="M54 86 C54 68, 59 53, 66 43" stroke="#D97706" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="3 4"/>
+</svg>

@@ -1,0 +1,6 @@
+{
+  "name": "Masterson Case Digital",
+  "description": "Offline-first equine bodywork evaluation, anatomical diagramming, local Whisper voice transcription, and case study notebook for The Masterson Method.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": []
+}
