@@ -46,6 +46,9 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     stopRecording: 'Stop',
     transcribeClip: 'Transcribe Locally',
     appendTranscriptBtn: 'Append to Session Notes',
+    aboutTitle: 'About this app',
+    methodDisclaimer:
+      "Independent field tool for equine bodywork practitioners, inspired by Jim Masterson's Beyond Horse Massage and research on myofascial kinetic lines (V.S. Elbrønd & R.M. Schultz). Not an official product of The Masterson Method®. Not veterinary advice.",
     deleteModel: 'Delete Model',
     printPdfBtn: 'Save / Share A4 PDF',
     regenerateReportBtn: 'Sync Summary from Map & Notes',
@@ -103,6 +106,9 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     stopRecording: 'Стоп',
     transcribeClip: 'Распознать локально',
     appendTranscriptBtn: 'Добавить в заметки сессии',
+    aboutTitle: 'О приложении',
+    methodDisclaimer:
+      'Независимый полевой инструмент специалиста по бодиворку лошадей, созданный под вдохновением от книги Jim Masterson «Beyond Horse Massage» и исследований миофасциальных кинетических линий (V.S. Elbrønd & R.M. Schultz). Не является официальным продуктом The Masterson Method®. Не является ветеринарной консультацией.',
     deleteModel: 'Удалить модель',
     printPdfBtn: 'Сохранить / Поделиться A4 PDF',
     regenerateReportBtn: 'Обновить сводку из карты и заметок',
