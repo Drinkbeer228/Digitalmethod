@@ -21,6 +21,7 @@ import {
 } from '../types';
 import { buildReportFromSession, getUnifiedSessionNotes } from './reportGenerator';
 import { DEFAULT_PDF_EXPORT_OPTIONS, PdfExportOptions } from './pdfExportOptions';
+import { stripPatternNoteLines } from './patternDetection';
 import {
   buildMastersonPlan,
   formatPressureRange,
@@ -615,6 +616,34 @@ export function makePdfTextSanitizer(fonts: PDFFont[]): (text: string) => string
   };
 }
 
+/**
+ * ASCII-folds the few non-ASCII marks used in PDF-only reference text (ø, ®) so they print
+ * cleanly at small sizes; the app UI keeps the original spelling.
+ */
+export function toPdfAscii(text: string): string {
+  return text.replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/®/g, '(R)');
+}
+
+/**
+ * Shortens text with a trailing ellipsis so it fits within maxWidth at the given size.
+ * Returns the text unchanged when it already fits.
+ */
+export function fitTextToWidth(text: string, font: PDFFont, size: number, maxWidth: number): string {
+  if (font.widthOfTextAtSize(text, size) <= maxWidth) return text;
+  const ellipsis = '…';
+  const chars = Array.from(text);
+  let lo = 0;
+  let hi = chars.length;
+  // Longest prefix that fits together with the ellipsis
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const candidate = chars.slice(0, mid).join('').trimEnd() + ellipsis;
+    if (font.widthOfTextAtSize(candidate, size) <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo > 0 ? chars.slice(0, lo).join('').trimEnd() + ellipsis : '';
+}
+
 function wrapTextToLines(
   text: string,
   font: PDFFont,
@@ -933,8 +962,8 @@ export async function generateSessionPdfBytes(
 
   const docTitle =
     lang === 'ru'
-      ? 'ОТЧЕТ О СЕССИИ БОДИВОРКА ЛОШАДИ (MASTERSON METHOD)'
-      : 'MASTERSON METHOD EQUINE BODYWORK — SESSION REPORT';
+      ? 'ОТЧЕТ О СЕССИИ БОДИВОРКА ЛОШАДИ'
+      : 'EQUINE BODYWORK — SESSION REPORT';
 
   page1.drawText(docTitle, {
     x: margin + 12,
@@ -962,7 +991,7 @@ export async function generateSessionPdfBytes(
   // Clean Metadata Grid (Omits empty optional fields instead of printing blank underscores)
   const metaPairs: Array<{ label: string; value: string }> = [
     { label: t.horseLabel, value: horse.name || 'Unnamed Horse' },
-    { label: t.sessionNum, value: `#${session.sessionNumber}` },
+    { label: t.sessionNum, value: `${session.sessionNumber}` },
     { label: t.dateLabel, value: session.date },
   ];
   if (horse.breed?.trim()) metaPairs.push({ label: t.breedLabel, value: horse.breed.trim() });
@@ -976,9 +1005,12 @@ export async function generateSessionPdfBytes(
     metaPairs.push({ label: t.durationLabel, value: session.duration.trim() });
   }
 
+  // Each cell: small label above its value, both clipped to the cell's column so a long
+  // practitioner / owner name can never run into the neighbouring column.
   const cols = 4;
   const rowsCount = Math.ceil(metaPairs.length / cols);
-  const metaBoxH = rowsCount * 16 + 10;
+  const metaRowH = 21;
+  const metaBoxH = rowsCount * metaRowH + 8;
 
   page1.drawRectangle({
     x: margin,
@@ -991,23 +1023,22 @@ export async function generateSessionPdfBytes(
   });
 
   const colW = contentW / cols;
+  const cellMaxW = colW - 8 - 6; // left padding + gap before the next column
   metaPairs.forEach((item, idx) => {
     const r = Math.floor(idx / cols);
     const c = idx % cols;
     const x = margin + 8 + c * colW;
-    const y = cursorY - 14 - r * 16;
-    const labelStr = `${item.label}: `;
-    const lw = regular.widthOfTextAtSize(labelStr, 7.5);
-    page1.drawText(labelStr, {
+    const labelY = cursorY - 11 - r * metaRowH;
+    page1.drawText(fitTextToWidth(item.label, regular, 6.6, cellMaxW), {
       x,
-      y,
-      size: 7.5,
+      y: labelY,
+      size: 6.6,
       font: regular,
       color: COLOR_MUTED,
     });
-    page1.drawText(item.value.slice(0, 26), {
-      x: x + lw,
-      y,
+    page1.drawText(fitTextToWidth(item.value, bold, 7.8, cellMaxW), {
+      x,
+      y: labelY - 9,
       size: 7.8,
       font: bold,
       color: COLOR_CHARCOAL,
@@ -1219,7 +1250,9 @@ export async function generateSessionPdfBytes(
   });
 
   // Page footers are drawn at the end, once the total page count is known
-  const footerPrefix = `${horse.name} · ${t.sessionNum} #${session.sessionNumber} · ${session.date}`;
+  // t.sessionNum already ends with "№" / "#": "Сессия №2", "Session #2"
+  const sessionLabel = `${t.sessionNum}${session.sessionNumber}`;
+  const footerPrefix = [horse.name, sessionLabel, session.date].filter(Boolean).join(' · ');
 
   // =========================================================================
   // PAGE 2: UNIFIED EVALUATED ZONES SUMMARY TABLE & SESSION NOTES
@@ -1546,13 +1579,13 @@ export async function generateSessionPdfBytes(
           : 'No marked zones on myofascial lines.',
       '',
       lang === 'ru'
-        ? 'Число отмеченных зон линии — не мера напряжения. Источники: Elbrønd & Schultz 2015 (Medical Research Archives 3); Elbrønd & Schultz 2021 (Open Journal of Veterinary Medicine 11(1)).'
-        : 'The count of marked zones is not a measure of tension. Sources: Elbrønd & Schultz 2015 (Medical Research Archives 3); Elbrønd & Schultz 2021 (Open Journal of Veterinary Medicine 11(1)).',
+        ? 'Число отмеченных зон линии — не мера напряжения. Источники: Elbrond & Schultz 2015 (Medical Research Archives 3); Elbrond & Schultz 2021 (Open Journal of Veterinary Medicine 11(1)).'
+        : 'The count of marked zones is not a measure of tension. Sources: Elbrond & Schultz 2015 (Medical Research Archives 3); Elbrond & Schultz 2021 (Open Journal of Veterinary Medicine 11(1)).',
     ].join('\n');
     drawNarrativeSection(
       lang === 'ru'
-        ? 'Миофасциальные линии (Elbrønd & Schultz)'
-        : 'Myofascial Kinetic Lines (Elbrønd & Schultz)',
+        ? 'Миофасциальные линии (Elbrond & Schultz)'
+        : 'Myofascial Kinetic Lines (Elbrond & Schultz)',
       body
     );
   }
@@ -1561,7 +1594,11 @@ export async function generateSessionPdfBytes(
   if (options.notes) {
     const unifiedSessionText =
       getUnifiedSessionNotes(session) || syncedSections.sessionNotes;
-    drawNarrativeSection(t.sec5Title, unifiedSessionText);
+    // Owner version: drop the technical "[Паттерн №N]" lines added from Clinical Insights
+    const notesText = options.patternNotes
+      ? unifiedSessionText
+      : stripPatternNoteLines(unifiedSessionText);
+    if (notesText.trim()) drawNarrativeSection(t.sec5Title, notesText);
   }
 
   // 4. Before / After Photos (current flow page when it fits, otherwise a dedicated page;
@@ -1632,7 +1669,7 @@ export async function generateSessionPdfBytes(
 
   // Footers on every page: "<horse> · Session #N · date · Page X / Y"
   const allPages = pdfDoc.getPages();
-  const disclaimerLines = wrapTextToLines(t.methodDisclaimer, regular, 5.4, contentW);
+  const disclaimerLines = wrapTextToLines(toPdfAscii(t.methodDisclaimer), regular, 5.4, contentW);
   allPages.forEach((pg, idx) => {
     pg.drawText(`${footerPrefix} · Page ${idx + 1} / ${allPages.length}`, {
       x: margin,

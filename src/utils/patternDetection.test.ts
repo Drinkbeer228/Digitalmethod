@@ -12,6 +12,8 @@ import {
 } from '../types';
 import {
   appendPatternToNotes,
+  isPatternNoteLine,
+  stripPatternNoteLines,
   detectActivePatterns,
   isAreaActive,
   matchPattern,
@@ -194,4 +196,30 @@ test('pattern lines are appended to notes once (de-duplicated across languages)'
   assert.equal(appendPatternToNotes(once, m, 'ru'), once);
   assert.equal(appendPatternToNotes(once, m, 'en'), once);
   assert.ok(appendPatternToNotes('', m, 'en').startsWith('💡 [Pattern #10]'));
+});
+
+test('stripPatternNoteLines removes only the "[Паттерн №N]" / "[Pattern #N]" lines', () => {
+  const notes = [
+    'Left poll softened after LCF.',
+    '💡 [Паттерн №10] Осевая связь затылок – крестец (Л) — зоны: #2 Затылок (Л)',
+    '',
+    '💡 [Pattern #4] Diagonal pattern (L/R)',
+    '[Паттерн №7] без эмодзи',
+    'Паттерн №3 обсуждали с владельцем — эта строка остаётся.',
+    'Owner asked about [Pattern #2] mid-sentence — stays.',
+  ].join('\n');
+  const stripped = stripPatternNoteLines(notes);
+  assert.equal(
+    stripped,
+    [
+      'Left poll softened after LCF.',
+      '',
+      'Паттерн №3 обсуждали с владельцем — эта строка остаётся.',
+      'Owner asked about [Pattern #2] mid-sentence — stays.',
+    ].join('\n')
+  );
+  assert.equal(stripPatternNoteLines('💡 [Pattern #1] only\n[Паттерн №2] only'), '');
+  assert.equal(stripPatternNoteLines(''), '');
+  assert.equal(isPatternNoteLine('  💡 [Паттерн №12] x'), true);
+  assert.equal(isPatternNoteLine('Note [Pattern #12]'), false);
 });

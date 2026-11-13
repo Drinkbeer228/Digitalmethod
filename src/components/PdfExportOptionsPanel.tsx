@@ -58,6 +58,12 @@ const OPTION_TEXT: Record<keyof PdfExportOptions, { en: string; ru: string; hint
     hintEn: 'Session notes and techniques',
     hintRu: 'Заметки сессии и техники',
   },
+  patternNotes: {
+    en: 'Pattern lines in notes',
+    ru: 'Строки паттернов в заметках',
+    hintEn: '[Pattern #N] lines from Clinical Insights',
+    hintRu: '[Паттерн №N] из клинических подсказок',
+  },
   photos: {
     en: 'Before / after photos',
     ru: 'Фото до / после',

@@ -227,7 +227,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
   // Clean metadata items (omits empty optional fields)
   const cleanMetaItems: Array<{ label: string; value: string; accent?: boolean }> = [
     { label: t.horseLabel, value: horse.name || 'Unnamed Horse', accent: true },
-    { label: t.sessionNum, value: `#${session.sessionNumber}`, accent: true },
+    { label: t.sessionNum, value: `${session.sessionNumber}`, accent: true },
     { label: t.dateLabel, value: session.date },
   ];
   if (horse.breed?.trim()) cleanMetaItems.push({ label: t.breedLabel, value: horse.breed });
