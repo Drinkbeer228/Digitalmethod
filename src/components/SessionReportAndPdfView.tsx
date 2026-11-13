@@ -104,7 +104,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
     setPreBuiltPdfFile(null);
     void (async () => {
       try {
-        const file = await buildSessionPdfFile(horse, session, 'unified', lang);
+        const file = await buildSessionPdfFile(horse, session, lang);
         if (!cancelled) {
           setPreBuiltPdfFile(file);
         }
@@ -137,7 +137,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
       setIsGeneratingPdf(true);
       const pdfFile =
         preBuiltPdfFile ??
-        (await buildSessionPdfFile(horse, session, 'unified', lang));
+        (await buildSessionPdfFile(horse, session, lang));
       const outcome = await shareOrDownloadPdfFile(
         pdfFile,
         `Masterson Method Report — ${horse.name}`
@@ -166,7 +166,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
       setIsGeneratingPdf(true);
       const pdfFile =
         preBuiltPdfFile ??
-        (await buildSessionPdfFile(horse, session, 'unified', lang));
+        (await buildSessionPdfFile(horse, session, lang));
       triggerPdfFileDownload(pdfFile);
       setExportStatusMsg(
         lang === 'ru' ? `Скачан файл ${pdfFile.name}` : `Downloaded ${pdfFile.name}`
@@ -294,7 +294,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
             data-testid="export-a4-pdf-btn"
             disabled={isGeneratingPdf}
             onClick={() => void handleSaveOrSharePdf()}
-            className="min-h-[40px] inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#2B4C3F] hover:bg-[#223D32] disabled:opacity-60 text-white text-xs font-bold shadow-xs cursor-pointer whitespace-nowrap"
+            className="hidden lg:inline-flex min-h-[40px] items-center gap-1.5 px-4 py-2 rounded-xl bg-[#2B4C3F] hover:bg-[#223D32] disabled:opacity-60 text-white text-xs font-bold shadow-xs cursor-pointer whitespace-nowrap"
           >
             <Share2 className="w-4 h-4" />
             <span>{t.printPdfBtn}</span>
@@ -309,6 +309,20 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
             <Printer className="w-3.5 h-3.5" />
           </button>
         </div>
+      </div>
+
+      {/* Mobile: the share action stays anchored at the bottom, within thumb reach */}
+      <div className="no-print lg:hidden fixed bottom-0 inset-x-0 z-20 border-t border-slate-300 bg-[#FAF9F6]/95 backdrop-blur-xs px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <button
+          type="button"
+          data-testid="export-a4-pdf-btn-mobile"
+          disabled={isGeneratingPdf}
+          onClick={() => void handleSaveOrSharePdf()}
+          className="w-full min-h-[48px] inline-flex items-center justify-center gap-2 rounded-xl bg-[#2B4C3F] hover:bg-[#223D32] disabled:opacity-60 text-white text-sm font-bold shadow-xs cursor-pointer"
+        >
+          <Share2 className="w-4 h-4" />
+          <span>{lang === 'ru' ? 'Поделиться PDF' : 'Share PDF'}</span>
+        </button>
       </div>
 
       {/* Main Session Summary & Export Card */}

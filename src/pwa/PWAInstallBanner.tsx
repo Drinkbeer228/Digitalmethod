@@ -171,12 +171,18 @@ export const PWAInstallAction: React.FC<{ lang: Language }> = ({ lang }) => {
   );
 };
 
-export const OfflineConnectivityBanner: React.FC<{ lang: Language }> = ({ lang }) => {
+export const OfflineConnectivityBanner: React.FC<{
+  lang: Language;
+  /** Sit just under the header instead of the bottom corner (keeps the thumb bar clear). */
+  raised?: boolean;
+}> = ({ lang, raised = false }) => {
   const isOnline = useOnlineStatus();
   if (isOnline) return null;
 
   return (
-    <div className="fixed bottom-3 right-3 z-40 flex items-center gap-2 rounded-lg bg-[#2B4C3F] px-3.5 py-2 text-xs font-medium text-[#FAF9F6] shadow-md border border-[#FAF9F6]/20 no-print">
+    <div
+      className={`fixed right-3 z-40 ${raised ? 'top-14' : 'bottom-3'} flex items-center gap-2 rounded-lg bg-[#2B4C3F] px-3.5 py-2 text-xs font-medium text-[#FAF9F6] shadow-md border border-[#FAF9F6]/20 no-print`}
+    >
       <WifiOff className="w-3.5 h-3.5 text-amber-300 shrink-0" />
       <span>
         {lang === 'ru'

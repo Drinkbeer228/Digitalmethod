@@ -739,10 +739,17 @@ export const EvaluationAudioNotesPanel: React.FC<EvaluationAudioNotesPanelProps>
                 >
                   <div>
                     <span className="font-semibold text-slate-800">
-                      Recording: {rec.recordingId} ({rec.chunkCount} chunks)
+                      {lang === 'ru'
+                        ? `Запись · частей: ${rec.chunkCount}`
+                        : `Recording · ${rec.chunkCount} part${rec.chunkCount === 1 ? '' : 's'}`}
                     </span>
                     <span className="text-slate-500 block text-[11px]">
-                      {new Date(rec.createdAt).toLocaleString()} · Session: {rec.sessionId}
+                      {new Date(rec.createdAt).toLocaleString(lang === 'ru' ? 'ru-RU' : 'en-GB', {
+                        day: 'numeric',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">

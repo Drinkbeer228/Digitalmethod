@@ -13,13 +13,13 @@ import {
 import {
   ANATOMICAL_AREAS,
   ANATOMICAL_REGIONS,
-  BODY_PART_FILTERS,
   BodyPartFilterId,
   getAreaCoordinate,
   getAreaReactionEndpoints,
   matchesBodyPartFilter,
   TOP_VIEW_ANCHORS,
 } from '../data/anatomicalAreas';
+import { bodyPartForRegionPolygon } from '../utils/zoneEditing';
 
 interface HorseSilhouetteSvgProps {
   view: 'left' | 'right' | 'top';
@@ -249,43 +249,11 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
   };
 
   const viewBoxStr = `0 0 ${width} ${height}`;
+  // Tapping a coloured region (anywhere that is not a numbered landmark) filters the list.
+  const canTapToFilter = !readOnly && view !== 'top' && Boolean(onChangeBodyPartFilter);
 
   return (
     <div className="relative w-full h-full flex flex-col select-none">
-      {/* Floating Body-Part Filter in Top-Right Corner of Left/Right Diagram */}
-      {!readOnly && view !== 'top' && onChangeBodyPartFilter && (
-        <div
-          data-testid={`body-part-filter-bar-${view}`}
-          className="absolute top-2 right-2 z-10 bg-white/90 backdrop-blur-sm rounded-lg border border-slate-300/90 p-0.5 shadow-xs flex items-center gap-0.5"
-          role="group"
-          aria-label={lang === 'ru' ? 'Фильтр частей тела' : 'Body Part Filter'}
-        >
-          {BODY_PART_FILTERS.map((f) => {
-            const isActive = bodyPartFilter === f.id;
-            return (
-              <button
-                key={f.id}
-                type="button"
-                data-testid={`body-part-filter-${view}-${f.id}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onChangeBodyPartFilter(
-                    bodyPartFilter === f.id && f.id !== 'all' ? 'all' : f.id
-                  );
-                }}
-                className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-                  isActive
-                    ? 'bg-[#2B4C3F] text-white shadow-2xs'
-                    : 'text-slate-700 hover:text-slate-950 hover:bg-slate-100/80'
-                }`}
-              >
-                {lang === 'ru' ? f.labelRu : f.labelEn}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       <svg
         viewBox={viewBoxStr}
         className={
@@ -359,7 +327,7 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
                     const stroke = isFilterFocused
                       ? region.activeStroke
                       : region.pastelStroke;
-                    const fillOpacity = isDimmed ? 0.18 : isFilterFocused ? 0.75 : 0.58;
+                    const fillOpacity = isDimmed ? 0.1 : isFilterFocused ? 0.5 : 0.36;
                     const strokeOpacity = isDimmed ? 0.25 : isFilterFocused ? 0.92 : 0.75;
 
                     return (
@@ -372,6 +340,20 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
                         strokeWidth={isFilterFocused ? 2.2 : 1.5}
                         strokeOpacity={strokeOpacity}
                         strokeLinejoin="round"
+                        data-testid={
+                          canTapToFilter ? `region-polygon-${view}-${region.id}-${pIdx}` : undefined
+                        }
+                        className={canTapToFilter ? 'cursor-pointer' : undefined}
+                        onClick={
+                          canTapToFilter
+                            ? () => {
+                                const part = bodyPartForRegionPolygon(region.id, pIdx);
+                                onChangeBodyPartFilter?.(
+                                  bodyPartFilter === part ? 'all' : part
+                                );
+                              }
+                            : undefined
+                        }
                       />
                     );
                   })}

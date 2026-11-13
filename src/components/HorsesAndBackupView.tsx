@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   BodyworkSession,
   HorseProfile,
@@ -39,6 +39,8 @@ interface HorsesAndBackupViewProps {
   activeHorseId: string;
   activeSessionId: string;
   lang: Language;
+  /** Bump to bring the selected session's report into view (e.g. "Open report" after Finish). */
+  focusReportSignal?: number;
   installedModels: InstalledWhisperModel[];
   onSelectHorseAndSession: (horseId: string, sessionId: string) => void;
   onEditSessionOnMap?: (horseId: string, sessionId: string) => void;
@@ -61,6 +63,7 @@ export const HorsesAndBackupView: React.FC<HorsesAndBackupViewProps> = ({
   activeHorseId,
   activeSessionId,
   lang,
+  focusReportSignal = 0,
   installedModels,
   onSelectHorseAndSession,
   onEditSessionOnMap,
@@ -92,6 +95,12 @@ export const HorsesAndBackupView: React.FC<HorsesAndBackupViewProps> = ({
   } | null>(null);
   const backupInputRef = useRef<HTMLInputElement | null>(null);
   const summarySectionRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (focusReportSignal > 0) {
+      summarySectionRef.current?.scrollIntoView({ block: 'start' });
+    }
+  }, [focusReportSignal]);
 
   // Collapsible Settings & Backup State
   const [showSettingsAndBackup, setShowSettingsAndBackup] = useState(false);
@@ -190,6 +199,24 @@ export const HorsesAndBackupView: React.FC<HorsesAndBackupViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Selected session's report comes first: it is what Finish hands off to.
+          SELECTED SESSION SUMMARY, EVALUATED ZONES BREAKDOWN & OFFLINE A4 PDF EXPORT */}
+      {selectedHorse && selectedSession && onUpdateReportSections && (
+        <div ref={summarySectionRef} className="scroll-mt-16">
+          <SessionReportAndPdfView
+            horse={selectedHorse}
+            session={selectedSession}
+            lang={lang}
+            onUpdateReportSections={onUpdateReportSections}
+            onEditOnMap={
+              onEditSessionOnMap
+                ? () => onEditSessionOnMap(selectedHorse.id, selectedSession.id)
+                : undefined
+            }
+          />
+        </div>
+      )}
+
       {/* Top Row: Horses List + Selected Horse Persistent Profile & Session History */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left 4 cols: Horse Roster */}
@@ -602,23 +629,6 @@ export const HorsesAndBackupView: React.FC<HorsesAndBackupViewProps> = ({
           )}
         </div>
       </div>
-
-      {/* SELECTED SESSION SUMMARY, EVALUATED ZONES BREAKDOWN & OFFLINE A4 PDF EXPORT */}
-      {selectedHorse && selectedSession && onUpdateReportSections && (
-        <div ref={summarySectionRef}>
-          <SessionReportAndPdfView
-            horse={selectedHorse}
-            session={selectedSession}
-            lang={lang}
-            onUpdateReportSections={onUpdateReportSections}
-            onEditOnMap={
-              onEditSessionOnMap
-                ? () => onEditSessionOnMap(selectedHorse.id, selectedSession.id)
-                : undefined
-            }
-          />
-        </div>
-      )}
 
       {/* COLLAPSIBLE SETTINGS & BACKUP (Minimalist Offline Speech Model + JSON Backup/Restore) */}
       <div
