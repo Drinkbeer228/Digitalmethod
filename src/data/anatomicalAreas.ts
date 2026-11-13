@@ -11,7 +11,7 @@ export interface AnatomicalRegionMeta {
   id: AnatomicalRegionId;
   nameEn: string;
   nameRu: string;
-  /** Muted low-intensity pastel fill & border for veterinary atlas zoning */
+  /** Region fill & border; drawn semi-transparent under the multiply-blended line art */
   pastelFill: string;
   pastelStroke: string;
   /** Slightly richer tint when hovered or filtered */
@@ -28,10 +28,10 @@ export const ANATOMICAL_REGIONS: AnatomicalRegionMeta[] = [
     id: 'head_poll',
     nameEn: 'Head & Poll',
     nameRu: 'Голова и затылок',
-    pastelFill: '#FDE68A',
-    pastelStroke: '#D97706',
-    activeFill: '#FCD34D',
-    activeStroke: '#B45309',
+    pastelFill: '#F5B841',
+    pastelStroke: '#C98A12',
+    activeFill: '#EFA51F',
+    activeStroke: '#9A6708',
     leftPolygons: [
       [
         { x: 0.134, y: 0.042 },
@@ -65,10 +65,10 @@ export const ANATOMICAL_REGIONS: AnatomicalRegionMeta[] = [
     id: 'neck_shoulder',
     nameEn: 'Neck & Shoulder',
     nameRu: 'Шея и плечо',
-    pastelFill: '#A7F3D0',
-    pastelStroke: '#059669',
-    activeFill: '#6EE7B7',
-    activeStroke: '#047857',
+    pastelFill: '#34C38F',
+    pastelStroke: '#1F9A6D',
+    activeFill: '#22AE7B',
+    activeStroke: '#14734F',
     leftPolygons: [
       [
         { x: 0.198, y: 0.082 },
@@ -106,10 +106,10 @@ export const ANATOMICAL_REGIONS: AnatomicalRegionMeta[] = [
     id: 'back_torso',
     nameEn: 'Back & Torso',
     nameRu: 'Спина и корпус',
-    pastelFill: '#BFDBFE',
-    pastelStroke: '#2563EB',
-    activeFill: '#93C5FD',
-    activeStroke: '#1D4ED8',
+    pastelFill: '#5AB4E8',
+    pastelStroke: '#2A86C2',
+    activeFill: '#3B9FDB',
+    activeStroke: '#1B6496',
     leftPolygons: [
       [
         { x: 0.478, y: 0.262 },
@@ -140,10 +140,10 @@ export const ANATOMICAL_REGIONS: AnatomicalRegionMeta[] = [
     id: 'pelvis_hindquarters',
     nameEn: 'Pelvis & Hindquarters',
     nameRu: 'Таз и задний отдел',
-    pastelFill: '#FED7AA',
-    pastelStroke: '#EA580C',
-    activeFill: '#FDBA74',
-    activeStroke: '#C2410C',
+    pastelFill: '#E07A5F',
+    pastelStroke: '#B9543A',
+    activeFill: '#D5644A',
+    activeStroke: '#8F3D28',
     leftPolygons: [
       [
         { x: 0.692, y: 0.264 },
@@ -176,10 +176,10 @@ export const ANATOMICAL_REGIONS: AnatomicalRegionMeta[] = [
     id: 'limbs_joints',
     nameEn: 'Limbs & Joints',
     nameRu: 'Конечности и суставы',
-    pastelFill: '#D9F99D',
-    pastelStroke: '#65A30D',
-    activeFill: '#BEF264',
-    activeStroke: '#4D7C0F',
+    pastelFill: '#A3B84A',
+    pastelStroke: '#7A8E2B',
+    activeFill: '#93A938',
+    activeStroke: '#5A6A1C',
     leftPolygons: [
       // Forelimbs
       [
