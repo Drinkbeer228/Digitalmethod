@@ -1433,13 +1433,24 @@ export async function generateSessionPdfBytes(
 
   // Footers on every page: "<horse> · Session #N · date · Page X / Y"
   const allPages = pdfDoc.getPages();
+  const disclaimerLines = wrapTextToLines(t.methodDisclaimer, regular, 5.4, contentW);
   allPages.forEach((pg, idx) => {
     pg.drawText(`${footerPrefix} · Page ${idx + 1} / ${allPages.length}`, {
       x: margin,
-      y: margin - 10,
+      y: margin - 5,
       size: 7,
       font: regular,
       color: COLOR_MUTED,
+    });
+    // Method / trademark disclaimer under the page footer
+    disclaimerLines.slice(0, 2).forEach((line, lIdx) => {
+      pg.drawText(line, {
+        x: margin,
+        y: margin - 13 - lIdx * 6.4, // keeps both lines ≥ 8pt above the sheet edge
+        size: 5.4,
+        font: regular,
+        color: COLOR_MUTED,
+      });
     });
   });
 

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AnatomicalAreaId,
   AnatomicalRegionId,
@@ -59,6 +59,12 @@ import { CentralEvaluationTable } from './components/CentralEvaluationTable';
 import { EvaluationAudioNotesPanel } from './components/EvaluationAudioNotesPanel';
 import { HorsesAndBackupView } from './components/HorsesAndBackupView';
 import { SessionPhotosPanel } from './components/SessionPhotosPanel';
+import { ClinicalInsightsSheet } from './components/ClinicalInsightsSheet';
+import {
+  appendPatternToNotes,
+  detectActivePatterns,
+  PatternMatch,
+} from './utils/patternDetection';
 import { BodyPartFilterBar } from './components/BodyPartFilterBar';
 import { FinishPhase, SessionFinishSheet } from './components/SessionFinishSheet';
 import { UpdateCellOptions } from './components/ZoneEditorSheet';
@@ -67,6 +73,7 @@ import {
   Camera,
   Check,
   ChevronDown,
+  Lightbulb,
   Mic,
   MoreHorizontal,
   Redo2,
@@ -196,6 +203,14 @@ export default function App() {
   liveSessionRef.current = activeSession;
 
   const t = TRANSLATIONS[lang];
+
+  // Read-only biomechanical pattern hints for the practitioner (never auto-added to the PDF)
+  const [isInsightsOpen, setIsInsightsOpen] = useState(false);
+  const insightMatches = useMemo(
+    () => (activeSession ? detectActivePatterns(activeSession) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeSession?.evaluationTable, activeSession?.annotations]
+  );
 
   const activeSessionKey = activeSession?.id ?? '';
   const activeSessionKeyRef = useRef(activeSessionKey);
@@ -901,6 +916,34 @@ export default function App() {
     </div>
   );
 
+  /** Rewrites the unified session notes from the latest session state (transcripts, pattern hints). */
+  const updateSessionNotes = (next: (currentNotes: string) => string) => {
+    const base = liveSessionRef.current ?? activeSession;
+    if (!base) return;
+    const current = getUnifiedSessionNotes(base);
+    const nextNotes = next(current);
+    if (nextNotes === current) return;
+    void persistSessionUpdate({ ...base, generalNotes: nextNotes, manualVoiceNotes: '' });
+  };
+
+  const handleAddPatternToNotes = (match: PatternMatch) =>
+    updateSessionNotes((current) => appendPatternToNotes(current, match, lang));
+
+  const insightsPill = (extraClass: string) =>
+    insightMatches.length > 0 ? (
+      <button
+        type="button"
+        data-testid="insights-pill"
+        onClick={() => setIsInsightsOpen(true)}
+        className={`inline-flex items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-950 font-semibold cursor-pointer ${extraClass}`}
+      >
+        <Lightbulb className="w-4 h-4 text-amber-600 shrink-0" />
+        <span>
+          {ru ? 'Связки зон' : 'Zone patterns'}: {insightMatches.length}
+        </span>
+      </button>
+    ) : null;
+
   const finishButton = (extraClass: string) => (
     <button
       type="button"
@@ -1165,6 +1208,7 @@ export default function App() {
                   >
                     <Redo2 className="w-3.5 h-3.5" />
                   </button>
+                  {insightsPill('min-h-[32px] px-3 text-xs ml-1')}
                   {finishButton('min-h-[32px] px-4 text-xs ml-1')}
                 </div>
               )}
@@ -1296,17 +1340,11 @@ export default function App() {
                 await db.voiceClips.delete(clipId);
                 setVoiceClips((prev) => prev.filter((c) => c.id !== clipId));
               }}
-              onAppendTranscriptToSessionNotes={(transcriptText) => {
-                const current = getUnifiedSessionNotes(liveSessionRef.current ?? activeSession);
-                const nextNotes = current
-                  ? `${current}\n${transcriptText}`
-                  : transcriptText;
-                void persistSessionUpdate({
-                  ...(liveSessionRef.current ?? activeSession),
-                  generalNotes: nextNotes,
-                  manualVoiceNotes: '',
-                });
-              }}
+              onAppendTranscriptToSessionNotes={(transcriptText) =>
+                updateSessionNotes((current) =>
+                  current ? `${current}\n${transcriptText}` : transcriptText
+                )
+              }
               onNavigateToHorses={() => setActiveTab('horses')}
             />
             </div>
@@ -1406,6 +1444,12 @@ export default function App() {
                       flushPendingNoteRef={flushPendingNoteRef}
                     />
                   </>
+                )}
+
+                {insightMatches.length > 0 && (
+                  <div className="no-print shrink-0 px-2 pt-1.5 bg-[#FAF9F6]">
+                    {insightsPill('w-full min-h-[40px] px-3 text-xs')}
+                  </div>
                 )}
 
                 {/* Bottom thumb bar: view switcher, Undo, Finish */}
@@ -1596,6 +1640,16 @@ export default function App() {
             </button>
           </div>
         </div>
+      )}
+
+      {isInsightsOpen && activeSession && insightMatches.length > 0 && (
+        <ClinicalInsightsSheet
+          matches={insightMatches}
+          lang={lang}
+          sessionNotes={getUnifiedSessionNotes(activeSession)}
+          onAddToNotes={handleAddPatternToNotes}
+          onClose={() => setIsInsightsOpen(false)}
+        />
       )}
 
       {finishPhase && activeHorse && activeSession && (

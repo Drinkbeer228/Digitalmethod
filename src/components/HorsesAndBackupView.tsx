@@ -694,6 +694,14 @@ export const HorsesAndBackupView: React.FC<HorsesAndBackupViewProps> = ({
 
         {showSettingsAndBackup && (
           <div className="px-5 pb-5 pt-2 border-t border-slate-200 space-y-5">
+            {/* About / method disclaimer */}
+            <div
+              data-testid="about-disclaimer"
+              className="rounded-lg border border-slate-200 bg-[#FAF9F6] p-3 space-y-1"
+            >
+              <div className="text-xs font-semibold text-[#1E2421]">{t.aboutTitle}</div>
+              <p className="text-[11px] leading-relaxed text-slate-600">{t.methodDisclaimer}</p>
+            </div>
             {/* 1. Minimalist Offline Speech Model Control (3 States Only) */}
             <div
               data-testid="minimalist-speech-model-card"
