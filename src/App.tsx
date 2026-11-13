@@ -58,7 +58,10 @@ import { removeLegacyWhisperTinyStorage } from './whisper/localWhisperEngine';
 import { HorseSilhouetteSvg } from './components/HorseSilhouetteSvg';
 import { CentralEvaluationTable } from './components/CentralEvaluationTable';
 import { EvaluationAudioNotesPanel } from './components/EvaluationAudioNotesPanel';
-import { HorsesAndBackupView } from './components/HorsesAndBackupView';
+import { DEMO_HORSE_ID } from './data/demoCase';
+import { HorsesView } from './components/HorsesView';
+import { SettingsView } from './components/SettingsView';
+import { SessionReportAndPdfView } from './components/SessionReportAndPdfView';
 import { SessionPhotosPanel } from './components/SessionPhotosPanel';
 import { ClinicalInsightsSheet } from './components/ClinicalInsightsSheet';
 import {
@@ -74,16 +77,20 @@ import {
   Camera,
   Check,
   ChevronDown,
+  FileText,
+  FolderOpen,
   Lightbulb,
+  ListChecks,
   Mic,
   MoreHorizontal,
   Redo2,
   RotateCw,
+  Settings,
   Undo2,
   X,
 } from 'lucide-react';
 
-type ActiveTab = 'editor' | 'horses';
+type ActiveTab = 'editor' | 'report' | 'horses' | 'settings';
 type SaveStatus = 'saved' | 'saving' | 'error';
 
 const DIAGONAL_PRESETS: Array<{
@@ -106,6 +113,10 @@ interface EvaluationHistorySnapshot {
 export default function App() {
   const [ready, setReady] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('editor');
+  // Each screen starts at its top: the page scroll is shared between tabs.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [activeTab]);
   const [lang, setLang] = useState<Language>('en');
 
   const [horses, setHorses] = useState<HorseProfile[]>([]);
@@ -133,7 +144,6 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [finishPhase, setFinishPhase] = useState<FinishPhase | null>(null);
-  const [reportFocusSignal, setReportFocusSignal] = useState(0);
   const [isSessionPickerOpen, setIsSessionPickerOpen] = useState(false);
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
   const saveSeqRef = useRef(0);
@@ -809,6 +819,65 @@ export default function App() {
   /** Mobile Evaluation runs in a fixed, non-scrolling shell: only the zone list scrolls. */
   const isMobileShell = !isDesktop && activeTab === 'editor' && hasSession;
 
+  const reloadHorsesAndSessions = async () => {
+    const [allHorses, allSessions] = await Promise.all([
+      db.horses.toArray(),
+      db.sessions.toArray(),
+    ]);
+    setHorses(allHorses);
+    setSessions(allSessions);
+    return { allHorses, allSessions };
+  };
+
+  const horsesView = (
+    <HorsesView
+      horses={horses}
+      sessions={sessions}
+      activeHorseId={activeHorseId}
+      activeSessionId={activeSessionId}
+      lang={lang}
+      onSelectHorseAndSession={(hId, sId) => {
+        void handleSelectHorseAndSession(hId, sId);
+      }}
+      onOpenSessionReport={(hId, sId) => {
+        void handleSelectHorseAndSession(hId, sId);
+        setActiveTab('report');
+      }}
+      onEditSessionOnMap={(hId, sId) => {
+        void handleSelectHorseAndSession(hId, sId);
+        setActiveTab('editor');
+      }}
+      onCreateHorse={handleCreateHorse}
+      onUpdateHorse={persistHorseUpdate}
+      onDeleteHorse={handleDeleteHorse}
+      onCreateSessionForHorse={handleCreateNewSession}
+      onDeleteSession={handleDeleteSession}
+    />
+  );
+
+  const settingsView = (
+    <SettingsView
+      lang={lang}
+      installedModels={installedModels}
+      hasDemoCase={horses.some((h) => h.id === DEMO_HORSE_ID || h.isDemo)}
+      onRefreshModels={async () => {
+        setInstalledModels(await db.whisperModels.toArray());
+      }}
+      onExportBackup={handleExportBackup}
+      onImportBackupFile={handleImportBackupFile}
+      onDeleteDemoCase={async () => {
+        await deleteDemonstrationCase();
+        const { allHorses, allSessions } = await reloadHorsesAndSessions();
+        await handleSelectHorseAndSession(allHorses[0]?.id ?? '', allSessions[0]?.id ?? '');
+      }}
+      onRestoreDemoCase={async () => {
+        const restored = await restoreDemonstrationCase();
+        await reloadHorsesAndSessions();
+        await handleSelectHorseAndSession(restored.horse.id, restored.session.id);
+      }}
+    />
+  );
+
   const savedTime = (
     lastSavedAt ?? (activeSession ? new Date(activeSession.updatedAt) : null)
   )?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
@@ -1044,28 +1113,30 @@ export default function App() {
           </a>
 
           <nav
-            className="flex items-center bg-[#F3F1EC] p-0.5 rounded-lg border border-slate-300 text-xs font-semibold shrink-0"
-            aria-label="Main Navigation"
+            className="flex items-center bg-[#F3F1EC] p-0.5 rounded-lg border border-slate-300 font-semibold shrink-0"
+            aria-label={t.mainNavLabel}
           >
             {(
               [
-                { id: 'editor' as const, label: ru ? 'Оценка' : 'Evaluation' },
-                { id: 'horses' as const, label: ru ? 'Лошади' : 'Horses' },
+                { id: 'editor' as const, label: t.navCaseEditor, Icon: ListChecks },
+                { id: 'report' as const, label: t.navReport, Icon: FileText },
+                { id: 'horses' as const, label: t.navHorses, Icon: FolderOpen },
               ]
-            ).map((tab) => (
+            ).map(({ id, label, Icon }) => (
               <button
-                key={tab.id}
+                key={id}
                 type="button"
-                data-testid={`nav-tab-${tab.id}`}
-                aria-current={activeTab === tab.id ? 'page' : undefined}
-                onClick={() => setActiveTab(tab.id)}
-                className={`min-h-[36px] lg:min-h-0 px-2.5 max-[359px]:px-1.5 lg:px-4 py-1.5 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                  activeTab === tab.id
+                data-testid={`nav-tab-${id}`}
+                aria-current={activeTab === id ? 'page' : undefined}
+                onClick={() => setActiveTab(id)}
+                className={`min-h-[40px] lg:min-h-0 min-w-[42px] px-0.5 lg:px-4 lg:py-1.5 rounded-md transition-colors cursor-pointer whitespace-nowrap flex flex-col lg:flex-row items-center justify-center gap-0.5 lg:gap-1.5 text-[9px] leading-none lg:text-xs ${
+                  activeTab === id
                     ? 'bg-[#2B4C3F] text-white shadow-2xs'
                     : 'text-slate-700 hover:text-slate-900'
                 }`}
               >
-                {tab.label}
+                <Icon className="w-4 h-4 lg:w-3.5 lg:h-3.5 shrink-0" />
+                <span>{label}</span>
               </button>
             ))}
           </nav>
@@ -1115,7 +1186,7 @@ export default function App() {
               {voiceClips.length > 0 && (
                 <span
                   data-testid="header-audio-clip-badge"
-                  className="px-1.5 py-0.5 rounded-full bg-[#2B4C3F] text-white font-tabular text-[10px] font-bold leading-none"
+                  className="absolute -top-1 -right-1 lg:static px-1.5 py-0.5 rounded-full bg-[#2B4C3F] text-white font-tabular text-[10px] font-bold leading-none"
                 >
                   {voiceClips.length}
                 </span>
@@ -1148,7 +1219,7 @@ export default function App() {
               {sessionPhotos.length > 0 && (
                 <span
                   data-testid="header-photo-count-badge"
-                  className="px-1.5 py-0.5 rounded-full bg-[#2B4C3F] text-white font-tabular text-[10px] font-bold leading-none"
+                  className="absolute -top-1 -right-1 lg:static px-1.5 py-0.5 rounded-full bg-[#2B4C3F] text-white font-tabular text-[10px] font-bold leading-none"
                 >
                   {sessionPhotos.length}
                 </span>
@@ -1160,6 +1231,21 @@ export default function App() {
             <>
               <PWAInstallAction lang={lang} />
               {languageSwitch}
+              <button
+                type="button"
+                data-testid="nav-tab-settings"
+                aria-label={t.navSettings}
+                title={t.navSettings}
+                aria-current={activeTab === 'settings' ? 'page' : undefined}
+                onClick={() => setActiveTab('settings')}
+                className={`min-h-[34px] min-w-[34px] rounded-lg border inline-flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                  activeTab === 'settings'
+                    ? 'bg-[#2B4C3F] text-white border-[#2B4C3F]'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                }`}
+              >
+                <Settings className="w-4 h-4" />
+              </button>
             </>
           ) : (
             <>
@@ -1271,49 +1357,10 @@ export default function App() {
             : 'flex-1 w-full max-w-[1400px] mx-auto px-3 md:px-8 py-4 md:py-6 pb-24 lg:pb-16'
         }
       >
-        {!activeHorse || !activeSession ? (
-          <HorsesAndBackupView
-            horses={horses}
-            sessions={sessions}
-            activeHorseId={activeHorseId}
-            activeSessionId={activeSessionId}
-            lang={lang}
-            onSelectHorseAndSession={(hId, sId) => {
-              void handleSelectHorseAndSession(hId, sId);
-            }}
-            onEditSessionOnMap={(hId, sId) => {
-              void handleSelectHorseAndSession(hId, sId);
-              setActiveTab('editor');
-            }}
-            onCreateHorse={handleCreateHorse}
-            onUpdateHorse={persistHorseUpdate}
-            onDeleteHorse={handleDeleteHorse}
-            onCreateSessionForHorse={handleCreateNewSession}
-            onDeleteSession={handleDeleteSession}
-            onDeleteDemoCase={async () => {
-              await deleteDemonstrationCase();
-              setHorses([]);
-              setSessions([]);
-            }}
-            onRestoreDemoCase={async () => {
-              const restored = await restoreDemonstrationCase();
-              const allH = await db.horses.toArray();
-              const allS = await db.sessions.toArray();
-              setHorses(allH);
-              setSessions(allS);
-              await handleSelectHorseAndSession(
-                restored.horse.id,
-                restored.session.id
-              );
-            }}
-            onExportBackup={handleExportBackup}
-            onImportBackupFile={handleImportBackupFile}
-            installedModels={installedModels}
-            onRefreshModels={async () => {
-              const models = await db.whisperModels.toArray();
-              setInstalledModels(models);
-            }}
-          />
+        {activeTab === 'settings' ? (
+          settingsView
+        ) : !activeHorse || !activeSession ? (
+          horsesView
         ) : activeTab === 'editor' ? (
           <div
             data-testid="evaluation-workspace"
@@ -1503,25 +1550,15 @@ export default function App() {
               </div>
             )}
           </div>
-        ) : (
-          <HorsesAndBackupView
-            horses={horses}
-            sessions={sessions}
-            activeHorseId={activeHorse.id}
-            activeSessionId={activeSession.id}
+        ) : activeTab === 'report' ? (
+          <SessionReportAndPdfView
+            horse={activeHorse}
+            session={activeSession}
             lang={lang}
-            focusReportSignal={reportFocusSignal}
-            onSelectHorseAndSession={(hId, sId) => {
-              void handleSelectHorseAndSession(hId, sId);
-            }}
-            onEditSessionOnMap={(hId, sId) => {
-              void handleSelectHorseAndSession(hId, sId);
-              setActiveTab('editor');
-            }}
-            sessionPhotos={sessionPhotos}
-            sessionPhotosSessionId={activeSessionKey}
-            onAddSessionPhotos={handleAddSessionPhotos}
-            onDeleteSessionPhoto={handleDeleteSessionPhoto}
+            photos={sessionPhotos}
+            onAddPhotos={handleAddSessionPhotos}
+            onDeletePhoto={handleDeleteSessionPhoto}
+            onEditOnMap={() => setActiveTab('editor')}
             onUpdateReportSections={(nextSections: ReportSections, customized: boolean) =>
               void persistSessionUpdate(
                 {
@@ -1532,38 +1569,9 @@ export default function App() {
                 false
               )
             }
-            onCreateHorse={handleCreateHorse}
-            onUpdateHorse={persistHorseUpdate}
-            onDeleteHorse={handleDeleteHorse}
-            onCreateSessionForHorse={handleCreateNewSession}
-            onDeleteSession={handleDeleteSession}
-            onDeleteDemoCase={async () => {
-              await deleteDemonstrationCase();
-              const remH = await db.horses.toArray();
-              const remS = await db.sessions.toArray();
-              setHorses(remH);
-              setSessions(remS);
-              await handleSelectHorseAndSession(remH[0]?.id ?? '', remS[0]?.id ?? '');
-            }}
-            onRestoreDemoCase={async () => {
-              const restored = await restoreDemonstrationCase();
-              const allH = await db.horses.toArray();
-              const allS = await db.sessions.toArray();
-              setHorses(allH);
-              setSessions(allS);
-              await handleSelectHorseAndSession(
-                restored.horse.id,
-                restored.session.id
-              );
-            }}
-            onExportBackup={handleExportBackup}
-            onImportBackupFile={handleImportBackupFile}
-            installedModels={installedModels}
-            onRefreshModels={async () => {
-              const models = await db.whisperModels.toArray();
-              setInstalledModels(models);
-            }}
           />
+        ) : (
+          horsesView
         )}
       </main>
 
@@ -1595,6 +1603,19 @@ export default function App() {
                         <span>{t.redo}</span>
                       </button>
                     )}
+                    <button
+                      type="button"
+                      data-testid="header-settings-btn"
+                      aria-current={activeTab === 'settings' ? 'page' : undefined}
+                      onClick={() => {
+                        setIsHeaderMenuOpen(false);
+                        setActiveTab('settings');
+                      }}
+                      className="w-full min-h-[44px] px-3 inline-flex items-center gap-2 rounded-lg border border-slate-300 text-xs font-semibold text-[#1E2421] cursor-pointer"
+                    >
+                      <Settings className="w-4 h-4" />
+                      <span>{t.navSettings}</span>
+                    </button>
                     <PWAInstallAction lang={lang} />
                   </div>
                 </>
@@ -1664,8 +1685,7 @@ export default function App() {
           onClose={() => setFinishPhase(null)}
           onOpenReport={() => {
             setFinishPhase(null);
-            setActiveTab('horses');
-            setReportFocusSignal((n) => n + 1);
+            setActiveTab('report');
           }}
         />
       )}
