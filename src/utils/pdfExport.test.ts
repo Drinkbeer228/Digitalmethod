@@ -1,5 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import {
   ANATOMICAL_AREAS,
@@ -24,6 +28,20 @@ import {
 } from './photoTestFixtures';
 import { buildReportFromSession, getUnifiedSessionNotes } from './reportGenerator';
 import { buildPdfFileName, generateSessionPdfBytes, groupPhotosForPdf } from './pdfExport';
+
+/** Extracts PDF text with poppler's pdftotext; returns null when the tool is unavailable. */
+function extractPdfText(bytes: Uint8Array): string | null {
+  const dir = mkdtempSync(join(tmpdir(), 'pdf-text-'));
+  try {
+    const file = join(dir, 'report.pdf');
+    writeFileSync(file, bytes);
+    const res = spawnSync('pdftotext', ['-enc', 'UTF-8', file, '-'], { encoding: 'utf8' });
+    if (res.error || res.status !== 0) return null;
+    return res.stdout;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 function makeTestFixtures(): { horse: HorseProfile; session: BodyworkSession } {
   const nowIso = '2026-04-17T10:00:00.000Z';
@@ -282,6 +300,60 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
     assert.ok(pages === 2 || pages === 3, `expected 2–3 pages, got ${pages}`);
     assert.ok(withPhotos.byteLength > plain.byteLength, 'photo bytes should be embedded');
     assert.equal((await PDFDocument.load(plain)).getPageCount(), 2, 'no photos → unchanged 2 pages');
+  });
+
+  it('flows very long session notes and owner care onto continuation pages without dropping text', async () => {
+    const { horse, session } = makeTestFixtures();
+    const baseline = await generateSessionPdfBytes(horse, session, 'en');
+
+    const noteLines = Array.from(
+      { length: 80 },
+      (_, i) => `Line ${i + 1}: palpation note along the bladder meridian, softening observed.`
+    );
+    session.generalNotes = [...noteLines, '💡 [Pattern #10] appended insight NOTES-END-MARKER-7Q'].join('\n');
+    session.reportSections = {
+      ...session.reportSections,
+      postSessionCareNotes: [
+        ...Array.from({ length: 30 }, (_, i) => `Care step ${i + 1}: hand-walk and monitor.`),
+        'Final reminder CARE-END-MARKER-3Z',
+      ].join('\n'),
+    };
+
+    const longBytes = await generateSessionPdfBytes(horse, session, 'en');
+    const longDoc = await PDFDocument.load(longBytes);
+    assert.ok(longDoc.getPageCount() > 2, `expected > 2 pages, got ${longDoc.getPageCount()}`);
+    assert.ok(longBytes.byteLength > baseline.byteLength, 'overflowing notes should add content');
+
+    const text = extractPdfText(longBytes);
+    if (text !== null) {
+      assert.ok(text.includes('NOTES-END-MARKER-7Q'), 'last session-notes line must be in the PDF');
+      assert.ok(text.includes('Line 80:'), 'every session-notes line must be in the PDF');
+      assert.ok(text.includes('CARE-END-MARKER-3Z'), 'last owner-care line must be in the PDF');
+      assert.ok(text.includes(`Page ${longDoc.getPageCount()} / ${longDoc.getPageCount()}`));
+    }
+
+    // With photos pushed to their own page, text still flows and nothing is dropped
+    const photos: SessionPhoto[] = [
+      {
+        id: 'ph-before',
+        sessionId: session.id,
+        kind: 'before',
+        createdAt: '2026-04-17T10:05:00.000Z',
+        width: 48,
+        height: 32,
+        mimeType: 'image/jpeg',
+        sizeBytes: 800,
+        imageDataUrl: TEST_JPEG_LANDSCAPE_DATA_URL,
+      },
+    ];
+    const withPhotos = await generateSessionPdfBytes(horse, session, 'ru', photos);
+    const photoDoc = await PDFDocument.load(withPhotos);
+    assert.ok(photoDoc.getPageCount() >= 3);
+    const photoText = extractPdfText(withPhotos);
+    if (photoText !== null) {
+      assert.ok(photoText.includes('NOTES-END-MARKER-7Q'));
+      assert.ok(photoText.includes('CARE-END-MARKER-3Z'));
+    }
   });
 
   it('groups photos by kind, oldest first, max two per kind', () => {
