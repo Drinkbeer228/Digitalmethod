@@ -522,3 +522,59 @@ export function formatPressureRange(
     ? label(pressure.from)
     : `${label(pressure.from)} → ${label(pressure.to)}`;
 }
+
+/** Sides of a zone with anything marked (reaction, restriction or release). */
+export function markedSides(
+  table: EvaluationTableState | undefined,
+  areaId: AnatomicalAreaId
+): Array<'left' | 'right'> {
+  const row = table?.[areaId];
+  if (!row) return [];
+  return (['left', 'right'] as const).filter((s) => {
+    const o = row[s];
+    return Boolean(o && (o.reaction || o.restriction || o.released));
+  });
+}
+
+export interface LineInvolvement {
+  lineId: MyofascialLineId;
+  /** Marked zones on the line, in zone-index order */
+  marked: Array<{ areaId: AnatomicalAreaId; sides: Array<'left' | 'right'> }>;
+  /** All zones the sources place on this line */
+  total: number;
+}
+
+/**
+ * For each myofascial line with at least one marked zone: which of its zones are marked.
+ * A plain count ("N of M zones"), not a severity score.
+ */
+export function summarizeLineInvolvement(table: EvaluationTableState | undefined): LineInvolvement[] {
+  const result: LineInvolvement[] = [];
+  for (const line of MYOFASCIAL_LINES) {
+    const zones = getZonesOnLine(line.id);
+    const marked = zones
+      .map((areaId) => ({ areaId, sides: markedSides(table, areaId) }))
+      .filter((z) => z.sides.length > 0);
+    if (marked.length > 0) result.push({ lineId: line.id, marked, total: zones.length });
+  }
+  const lineOrder = (id: MyofascialLineId) => MYOFASCIAL_LINES.findIndex((l) => l.id === id);
+  return result.sort(
+    (a, b) => b.marked.length - a.marked.length || lineOrder(a.lineId) - lineOrder(b.lineId)
+  );
+}
+
+export interface MastersonPlanStage {
+  phase: SessionPhaseMeta;
+  /** Marked zones of this stage, in the stage's book order */
+  zones: Array<{ areaId: AnatomicalAreaId; technique: ZoneTechniqueRef | undefined }>;
+}
+
+/** Session stages (book order) that contain marked zones, with each zone's techniques. */
+export function buildMastersonPlan(table: EvaluationTableState | undefined): MastersonPlanStage[] {
+  return SESSION_PHASES.map((phase) => ({
+    phase,
+    zones: phase.areaIds
+      .filter((areaId) => isAreaMarked(table, areaId))
+      .map((areaId) => ({ areaId, technique: getTechniquesForArea(areaId) })),
+  })).filter((stage) => stage.zones.length > 0);
+}

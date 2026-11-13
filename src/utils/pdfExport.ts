@@ -20,6 +20,13 @@ import {
   SessionPhotoKind,
 } from '../types';
 import { buildReportFromSession, getUnifiedSessionNotes } from './reportGenerator';
+import { DEFAULT_PDF_EXPORT_OPTIONS, PdfExportOptions } from './pdfExportOptions';
+import {
+  buildMastersonPlan,
+  formatPressureRange,
+  getLineMeta,
+  summarizeLineInvolvement,
+} from '../data/clinicalReference';
 import { assetUrl } from './assetUrl';
 
 const A4_WIDTH = 595.28;
@@ -876,13 +883,14 @@ async function drawPhotoBand(
 /**
  * Generates a unified A4 PDF document (2 pages; more when long notes overflow) (Uint8Array) 100% offline using pdf-lib,
  * embedded DejaVuSans TrueType fonts (Latin + Cyrillic), high-DPI composited diagrams,
- * and crisp vector markers.
+ * and crisp vector markers. `options` selects the page-2+ sections; page 1 is always drawn.
  */
 export async function generateSessionPdfBytes(
   horse: HorseProfile,
   session: BodyworkSession,
   lang: Language = 'en',
-  photos: SessionPhoto[] = []
+  photos: SessionPhoto[] = [],
+  options: PdfExportOptions = DEFAULT_PDF_EXPORT_OPTIONS
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
   const { regular, bold } = await getEmbeddedFonts(pdfDoc);
@@ -1240,155 +1248,161 @@ export async function generateSessionPdfBytes(
   const page2 = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
   let p2Y = drawPageHeaderStrip(
     page2,
-    lang === 'ru'
-      ? `СВОДКА ОТМЕЧЕННЫХ ЗОН И ЗАМЕТКИ СЕССИИ — ${horse.name.toUpperCase()} (СЕССИЯ №${session.sessionNumber})`
-      : `EVALUATED ZONES SUMMARY & SESSION NOTES — ${horse.name.toUpperCase()} (SESSION #${session.sessionNumber})`
+    options.protocol
+      ? lang === 'ru'
+        ? `СВОДКА ОТМЕЧЕННЫХ ЗОН И ЗАМЕТКИ СЕССИИ — ${horse.name.toUpperCase()} (СЕССИЯ №${session.sessionNumber})`
+        : `EVALUATED ZONES SUMMARY & SESSION NOTES — ${horse.name.toUpperCase()} (SESSION #${session.sessionNumber})`
+      : lang === 'ru'
+        ? `ЗАМЕТКИ СЕССИИ — ${horse.name.toUpperCase()} (СЕССИЯ №${session.sessionNumber})`
+        : `SESSION NOTES — ${horse.name.toUpperCase()} (SESSION #${session.sessionNumber})`
   );
 
-  // Unified Table: Evaluated / Marked anatomical zones
-  const areasToRender = ANATOMICAL_AREAS.filter((a) => {
-    const row = session.evaluationTable[a.id];
-    return hasAnyCellObservation(row?.left) || hasAnyCellObservation(row?.right);
-  });
+  // Unified Table: Evaluated / Marked anatomical zones (part of the base protocol)
+  if (options.protocol) {
+    const areasToRender = ANATOMICAL_AREAS.filter((a) => {
+      const row = session.evaluationTable[a.id];
+      return hasAnyCellObservation(row?.left) || hasAnyCellObservation(row?.right);
+    });
 
-  // Table Header
-  const thH = 16;
-  const colLeftW = contentW * 0.34;
-  const colAreaW = contentW * 0.32;
-  const colRightW = contentW * 0.34;
+    // Table Header
+    const thH = 16;
+    const colLeftW = contentW * 0.34;
+    const colAreaW = contentW * 0.32;
+    const colRightW = contentW * 0.34;
 
-  page2.drawRectangle({
-    x: margin,
-    y: p2Y - thH,
-    width: contentW,
-    height: thH,
-    color: COLOR_CHARCOAL,
-  });
-  page2.drawText(t.tableLeft, {
-    x: margin + 8,
-    y: p2Y - 11.5,
-    size: 7.5,
-    font: bold,
-    color: COLOR_WHITE,
-  });
-  page2.drawText(
-    lang === 'ru'
-      ? 'Отмеченные анатомические зоны'
-      : 'Evaluated Anatomical Areas',
-    {
-      x: margin + colLeftW + 8,
+    page2.drawRectangle({
+      x: margin,
+      y: p2Y - thH,
+      width: contentW,
+      height: thH,
+      color: COLOR_CHARCOAL,
+    });
+    page2.drawText(t.tableLeft, {
+      x: margin + 8,
       y: p2Y - 11.5,
       size: 7.5,
       font: bold,
       color: COLOR_WHITE,
-    }
-  );
-  page2.drawText(t.tableRight, {
-    x: margin + colLeftW + colAreaW + 8,
-    y: p2Y - 11.5,
-    size: 7.5,
-    font: bold,
-    color: COLOR_WHITE,
-  });
-  p2Y -= thH;
-
-  const rowH = 18;
-  if (areasToRender.length === 0) {
-    page2.drawRectangle({
-      x: margin,
-      y: p2Y - 22,
-      width: contentW,
-      height: 22,
-      color: COLOR_PARCHMENT,
-      borderColor: COLOR_BORDER,
-      borderWidth: 0.5,
     });
     page2.drawText(
       lang === 'ru'
-        ? 'На карте оценки в данной сессии специфических реакций или рестрикций не отмечено.'
-        : 'No specific area reactions or restrictions marked in this session.',
+        ? 'Отмеченные анатомические зоны'
+        : 'Evaluated Anatomical Areas',
       {
-        x: margin + 10,
-        y: p2Y - 14,
+        x: margin + colLeftW + 8,
+        y: p2Y - 11.5,
         size: 7.5,
-        font: regular,
-        color: COLOR_MUTED,
+        font: bold,
+        color: COLOR_WHITE,
       }
     );
-    p2Y -= 22;
-  } else {
-    areasToRender.forEach((area, rIdx) => {
-      const row = session.evaluationTable[area.id];
-      const leftText = row ? clean(formatCellSummaryText(row.left, lang)) || '—' : '—';
-      const rightText = row ? clean(formatCellSummaryText(row.right, lang)) || '—' : '—';
-      const areaName = `${area.index}. ${lang === 'ru' ? area.nameRu : area.nameEn}`;
+    page2.drawText(t.tableRight, {
+      x: margin + colLeftW + colAreaW + 8,
+      y: p2Y - 11.5,
+      size: 7.5,
+      font: bold,
+      color: COLOR_WHITE,
+    });
+    p2Y -= thH;
 
+    const rowH = 18;
+    if (areasToRender.length === 0) {
       page2.drawRectangle({
         x: margin,
-        y: p2Y - rowH,
+        y: p2Y - 22,
         width: contentW,
-        height: rowH,
-        color: rIdx % 2 === 0 ? COLOR_PARCHMENT : COLOR_ROW_ALT,
+        height: 22,
+        color: COLOR_PARCHMENT,
         borderColor: COLOR_BORDER,
-        borderWidth: 0.4,
+        borderWidth: 0.5,
       });
+      page2.drawText(
+        lang === 'ru'
+          ? 'На карте оценки в данной сессии специфических реакций или рестрикций не отмечено.'
+          : 'No specific area reactions or restrictions marked in this session.',
+        {
+          x: margin + 10,
+          y: p2Y - 14,
+          size: 7.5,
+          font: regular,
+          color: COLOR_MUTED,
+        }
+      );
+      p2Y -= 22;
+    } else {
+      areasToRender.forEach((area, rIdx) => {
+        const row = session.evaluationTable[area.id];
+        const leftText = row ? clean(formatCellSummaryText(row.left, lang)) || '—' : '—';
+        const rightText = row ? clean(formatCellSummaryText(row.right, lang)) || '—' : '—';
+        const areaName = `${area.index}. ${lang === 'ru' ? area.nameRu : area.nameEn}`;
 
-      // Vertical dividers
-      page2.drawLine({
-        start: { x: margin + colLeftW, y: p2Y },
-        end: { x: margin + colLeftW, y: p2Y - rowH },
-        thickness: 0.4,
-        color: COLOR_BORDER,
-      });
-      page2.drawLine({
-        start: { x: margin + colLeftW + colAreaW, y: p2Y },
-        end: { x: margin + colLeftW + colAreaW, y: p2Y - rowH },
-        thickness: 0.4,
-        color: COLOR_BORDER,
-      });
+        page2.drawRectangle({
+          x: margin,
+          y: p2Y - rowH,
+          width: contentW,
+          height: rowH,
+          color: rIdx % 2 === 0 ? COLOR_PARCHMENT : COLOR_ROW_ALT,
+          borderColor: COLOR_BORDER,
+          borderWidth: 0.4,
+        });
 
-      const textY = p2Y - rowH / 2 - 2.3;
-      page2.drawText(leftText.slice(0, 42), {
-        x: margin + 5,
-        y: textY,
-        size: 6.8,
-        font: leftText !== '—' ? bold : regular,
-        color: row?.left?.reaction
-          ? COLOR_REACTION
-          : row?.left?.restriction
-            ? COLOR_RESTRICTION
-            : row?.left?.released
-              ? COLOR_RELEASED
-              : COLOR_SLATE,
-      });
+        // Vertical dividers
+        page2.drawLine({
+          start: { x: margin + colLeftW, y: p2Y },
+          end: { x: margin + colLeftW, y: p2Y - rowH },
+          thickness: 0.4,
+          color: COLOR_BORDER,
+        });
+        page2.drawLine({
+          start: { x: margin + colLeftW + colAreaW, y: p2Y },
+          end: { x: margin + colLeftW + colAreaW, y: p2Y - rowH },
+          thickness: 0.4,
+          color: COLOR_BORDER,
+        });
 
-      page2.drawText(areaName.slice(0, 36), {
-        x: margin + colLeftW + 6,
-        y: textY,
-        size: 7,
-        font: bold,
-        color: COLOR_CHARCOAL,
-      });
+        const textY = p2Y - rowH / 2 - 2.3;
+        page2.drawText(leftText.slice(0, 42), {
+          x: margin + 5,
+          y: textY,
+          size: 6.8,
+          font: leftText !== '—' ? bold : regular,
+          color: row?.left?.reaction
+            ? COLOR_REACTION
+            : row?.left?.restriction
+              ? COLOR_RESTRICTION
+              : row?.left?.released
+                ? COLOR_RELEASED
+                : COLOR_SLATE,
+        });
 
-      page2.drawText(rightText.slice(0, 42), {
-        x: margin + colLeftW + colAreaW + 5,
-        y: textY,
-        size: 6.8,
-        font: rightText !== '—' ? bold : regular,
-        color: row?.right?.reaction
-          ? COLOR_REACTION
-          : row?.right?.restriction
-            ? COLOR_RESTRICTION
-            : row?.right?.released
-              ? COLOR_RELEASED
-              : COLOR_SLATE,
-      });
+        page2.drawText(areaName.slice(0, 36), {
+          x: margin + colLeftW + 6,
+          y: textY,
+          size: 7,
+          font: bold,
+          color: COLOR_CHARCOAL,
+        });
 
-      p2Y -= rowH;
-    });
+        page2.drawText(rightText.slice(0, 42), {
+          x: margin + colLeftW + colAreaW + 5,
+          y: textY,
+          size: 6.8,
+          font: rightText !== '—' ? bold : regular,
+          color: row?.right?.reaction
+            ? COLOR_REACTION
+            : row?.right?.restriction
+              ? COLOR_RESTRICTION
+              : row?.right?.released
+                ? COLOR_RELEASED
+                : COLOR_SLATE,
+        });
+
+        p2Y -= rowH;
+      });
+    }
+
+    p2Y -= 12;
   }
-
-  p2Y -= 12;
 
   // ---------------------------------------------------------------------
   // Flowing narrative sections: start below the table on page 2 and continue
@@ -1488,23 +1502,72 @@ export async function generateSessionPdfBytes(
     }
   };
 
-  // 1. Response, Release & Guarding Signs (generated summary, capped)
-  drawNarrativeSection(t.sec3Title, syncedSections.releaseSignsObserved, { maxLines: 4 });
+  const sideShort = (sides: Array<'left' | 'right'>) =>
+    sides
+      .map((sd) => (sd === 'left' ? (lang === 'ru' ? 'Л' : 'L') : lang === 'ru' ? 'П' : 'R'))
+      .join('/');
+  const zoneIndex = (id: string) => ANATOMICAL_AREAS.find((a) => a.id === id)?.index ?? 0;
+  const zoneName = (id: string) => {
+    const a = ANATOMICAL_AREAS.find((x) => x.id === id);
+    return a ? (lang === 'ru' ? a.nameRu : a.nameEn) : id;
+  };
+  const palpationDisclaimer =
+    lang === 'ru'
+      ? 'Пальпация не отличает первичную хромоту от компенсаторной — это задача ветеринарного осмотра.'
+      : 'Palpation cannot tell primary from compensatory lameness — that needs a veterinary exam.';
 
-  // 2. Predominant Diagonal (if marked)
-  if (session.annotations.some((a) => a.kind === 'diagonal')) {
-    drawNarrativeSection(t.sec4Title, syncedSections.predominantDiagonal, { maxLines: 2 });
+  if (options.protocol) {
+    // 1. Response, Release & Guarding Signs (generated summary, capped)
+    drawNarrativeSection(t.sec3Title, syncedSections.releaseSignsObserved, { maxLines: 4 });
+
+    // 2. Predominant Diagonal (if marked)
+    if (session.annotations.some((a) => a.kind === 'diagonal')) {
+      drawNarrativeSection(t.sec4Title, syncedSections.predominantDiagonal, { maxLines: 2 });
+    }
+  }
+
+  // Myofascial kinetic lines: which zones of each line are marked ("N of M zones")
+  if (options.myofascial) {
+    const involvement = summarizeLineInvolvement(session.evaluationTable);
+    const lines = involvement.map((inv) => {
+      const line = getLineMeta(inv.lineId);
+      const zones = inv.marked
+        .map((z) => `${zoneIndex(z.areaId)} (${sideShort(z.sides)})`)
+        .join(', ');
+      return lang === 'ru'
+        ? `${line.id} — ${line.nameRu}: отмечено ${inv.marked.length} из ${inv.total} зон — ${zones}`
+        : `${line.id} — ${line.nameEn}: ${inv.marked.length} of ${inv.total} zones marked — ${zones}`;
+    });
+    const body = [
+      lines.length > 0
+        ? lines.join('\n')
+        : lang === 'ru'
+          ? 'Отмеченных зон на миофасциальных линиях нет.'
+          : 'No marked zones on myofascial lines.',
+      '',
+      lang === 'ru'
+        ? 'Число отмеченных зон линии — не мера напряжения. Источники: Elbrønd & Schultz 2015 (Medical Research Archives 3); Elbrønd & Schultz 2021 (Open Journal of Veterinary Medicine 11(1)).'
+        : 'The count of marked zones is not a measure of tension. Sources: Elbrønd & Schultz 2015 (Medical Research Archives 3); Elbrønd & Schultz 2021 (Open Journal of Veterinary Medicine 11(1)).',
+    ].join('\n');
+    drawNarrativeSection(
+      lang === 'ru'
+        ? 'Миофасциальные линии (Elbrønd & Schultz)'
+        : 'Myofascial Kinetic Lines (Elbrønd & Schultz)',
+      body
+    );
   }
 
   // 3. Unified Session Notes & Techniques Used — full text, flows onto extra pages
-  const unifiedSessionText =
-    getUnifiedSessionNotes(session) || syncedSections.sessionNotes;
-  drawNarrativeSection(t.sec5Title, unifiedSessionText);
+  if (options.notes) {
+    const unifiedSessionText =
+      getUnifiedSessionNotes(session) || syncedSections.sessionNotes;
+    drawNarrativeSection(t.sec5Title, unifiedSessionText);
+  }
 
   // 4. Before / After Photos (current flow page when it fits, otherwise a dedicated page;
   //    text that no longer fits on the current page then continues below the photos)
   const photoGroups = groupPhotosForPdf(photos);
-  if (photoGroups.before.length > 0 || photoGroups.after.length > 0) {
+  if (options.photos && (photoGroups.before.length > 0 || photoGroups.after.length > 0)) {
     const bandH = PHOTO_BAND_HEIGHT;
     // Leave room for at least a short Owner Care box below the photos
     if (flowY - bandH - 60 >= flowBottom) {
@@ -1523,10 +1586,49 @@ export async function generateSessionPdfBytes(
     }
   }
 
+  // Masterson work plan: session stages (book order) with the marked zones of each
+  if (options.mastersonPlan) {
+    const plan = buildMastersonPlan(session.evaluationTable);
+    const planLines: string[] = [];
+    for (const stage of plan) {
+      const ph = stage.phase;
+      planLines.push(`${ph.order}. ${lang === 'ru' ? ph.nameRu : ph.nameEn}. ${lang === 'ru' ? ph.startRu : ph.startEn}`);
+      for (const z of stage.zones) {
+        const tech = z.technique;
+        const detail = tech
+          ? `${tech.techniques.join(', ')}; ${
+              formatPressureRange(tech.pressure, lang) ?? (lang === 'ru' ? tech.handlingRu : tech.handlingEn)
+            }`
+          : lang === 'ru'
+            ? 'техника в источнике не описана'
+            : 'no technique described in the source';
+        planLines.push(`– ${zoneIndex(z.areaId)}. ${zoneName(z.areaId)}: ${detail}`);
+      }
+    }
+    const body = [
+      planLines.length > 0
+        ? planLines.join('\n')
+        : lang === 'ru'
+          ? 'Отмеченных зон нет.'
+          : 'No marked zones.',
+      '',
+      lang === 'ru'
+        ? 'Порядок и давление — по J. Masterson, Beyond Horse Massage (2012), гл. 4–9.'
+        : 'Order and pressure from J. Masterson, Beyond Horse Massage (2012), ch. 4–9.',
+      palpationDisclaimer,
+    ].join('\n');
+    drawNarrativeSection(
+      lang === 'ru' ? 'План работы по Мастерсону' : 'Masterson Work Plan',
+      body
+    );
+  }
+
   // 5. Post-Session Care Recommendations — full text, flows onto extra pages
-  drawNarrativeSection(t.sec6Title, syncedSections.postSessionCareNotes, {
-    highlightAmber: true,
-  });
+  if (options.ownerCare) {
+    drawNarrativeSection(t.sec6Title, syncedSections.postSessionCareNotes, {
+      highlightAmber: true,
+    });
+  }
 
   // Footers on every page: "<horse> · Session #N · date · Page X / Y"
   const allPages = pdfDoc.getPages();
@@ -1558,9 +1660,10 @@ export async function buildSessionPdfFile(
   horse: HorseProfile,
   session: BodyworkSession,
   lang: Language = 'en',
-  photos: SessionPhoto[] = []
+  photos: SessionPhoto[] = [],
+  options: PdfExportOptions = DEFAULT_PDF_EXPORT_OPTIONS
 ): Promise<File> {
-  const bytes = await generateSessionPdfBytes(horse, session, lang, photos);
+  const bytes = await generateSessionPdfBytes(horse, session, lang, photos, options);
   const filename = buildPdfFileName(horse, session);
   const bufferSlice = bytes.buffer.slice(
     bytes.byteOffset,

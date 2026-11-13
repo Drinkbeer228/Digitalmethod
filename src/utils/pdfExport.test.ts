@@ -28,6 +28,7 @@ import {
 } from './photoTestFixtures';
 import { buildReportFromSession, getUnifiedSessionNotes } from './reportGenerator';
 import { buildPdfFileName, generateSessionPdfBytes, groupPhotosForPdf } from './pdfExport';
+import { PDF_PRESETS } from './pdfExportOptions';
 
 /** Extracts PDF text with poppler's pdftotext; returns null when the tool is unavailable. */
 function extractPdfText(bytes: Uint8Array): string | null {
@@ -422,6 +423,75 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
       assert.ok(text.includes('20. Hip Point (Tuber Coxae)'));
       assert.ok(text.includes('21. Under-the-Tail (Tuber Ischii)'));
     }
+  });
+
+  it('includes only the selected sections (owner vs specialist presets and single toggles)', async () => {
+    const { horse, session } = makeTestFixtures();
+    session.evaluationTable.under_tail.left = { ...session.evaluationTable.under_tail.left, reaction: 1 };
+    session.generalNotes = 'Practitioner remark NOTES-MARK-91';
+    session.reportSections = { ...session.reportSections, postSessionCareNotes: 'Walk daily CARE-MARK-44' };
+
+    const owner = await generateSessionPdfBytes(horse, session, 'en', [], PDF_PRESETS.owner);
+    const specialist = await generateSessionPdfBytes(horse, session, 'en', [], PDF_PRESETS.specialist);
+    assert.equal((await PDFDocument.load(owner)).getPageCount(), 2);
+    assert.ok((await PDFDocument.load(specialist)).getPageCount() >= 2);
+
+    const ownerText = extractPdfText(owner);
+    const specText = extractPdfText(specialist);
+    if (ownerText !== null && specText !== null) {
+      assert.ok(!ownerText.includes('Myofascial Kinetic Lines'));
+      assert.ok(!ownerText.includes('Masterson Work Plan'));
+      assert.ok(ownerText.includes('NOTES-MARK-91') && ownerText.includes('CARE-MARK-44'));
+
+      assert.ok(specText.includes('Myofascial Kinetic Lines'));
+      assert.match(specText, /SDL — Superficial Dorsal Line: \d+ of \d+ zones marked/);
+      assert.ok(specText.includes('Masterson Work Plan'));
+      assert.ok(specText.includes('Under-the-Tail Point'));
+      assert.ok(specText.includes('veterinary exam'));
+    }
+
+    const ru = extractPdfText(await generateSessionPdfBytes(horse, session, 'ru', [], PDF_PRESETS.specialist));
+    if (ru !== null) {
+      assert.match(ru, /SDL — Поверхностная дорсальная линия: отмечено \d+ из \d+ зон/);
+      assert.ok(ru.includes('План работы по Мастерсону'));
+    }
+
+    const noNotes = extractPdfText(
+      await generateSessionPdfBytes(horse, session, 'en', [], { ...PDF_PRESETS.owner, notes: false, ownerCare: false })
+    );
+    if (noNotes !== null) {
+      assert.ok(!noNotes.includes('NOTES-MARK-91'));
+      assert.ok(!noNotes.includes('CARE-MARK-44'));
+    }
+
+    const noProtocol = extractPdfText(
+      await generateSessionPdfBytes(horse, session, 'en', [], { ...PDF_PRESETS.owner, protocol: false })
+    );
+    if (noProtocol !== null) {
+      assert.ok(!noProtocol.includes('Evaluated Anatomical Areas'));
+      assert.ok(noProtocol.includes('SESSION NOTES —'));
+      // Page 1 map and key stay
+      assert.ok(noProtocol.includes('Anatomical Landmarks Key (1–21)'));
+    }
+
+    const photos: SessionPhoto[] = [
+      {
+        id: 'ph-1',
+        sessionId: session.id,
+        kind: 'before',
+        createdAt: '2026-04-17T10:05:00.000Z',
+        width: 48,
+        height: 32,
+        mimeType: 'image/jpeg',
+        sizeBytes: 800,
+        imageDataUrl: TEST_JPEG_LANDSCAPE_DATA_URL,
+      },
+    ];
+    const withPhotos = await generateSessionPdfBytes(horse, session, 'en', photos, PDF_PRESETS.owner);
+    const photosOff = await generateSessionPdfBytes(horse, session, 'en', photos, { ...PDF_PRESETS.owner, photos: false });
+    assert.ok(withPhotos.byteLength > photosOff.byteLength, 'photo band omitted when photos are off');
+    const photosOffText = extractPdfText(photosOff);
+    if (photosOffText !== null) assert.ok(!photosOffText.includes('Photos: Before & After'));
   });
 
   it('groups photos by kind, oldest first, max two per kind', () => {
