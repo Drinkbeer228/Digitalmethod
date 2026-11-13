@@ -7,7 +7,6 @@ import React, { useEffect, useState } from 'react';
 import {
   AnatomicalAreaId,
   AnatomicalRegionId,
-  AnnotationColor,
   AreaSideObservation,
   BodyworkSession,
   DiagramAnnotation,
@@ -16,7 +15,6 @@ import {
   HorseProfile,
   InstalledWhisperModel,
   Language,
-  ProposedCaseSuggestion,
   ReactionLevel,
   ReportSections,
   Side,
@@ -49,7 +47,8 @@ import {
   buildReportFromSession,
   getUnifiedSessionNotes,
 } from './utils/reportGenerator';
-import { DrawingTool, HorseSilhouetteSvg } from './components/HorseSilhouetteSvg';
+import { removeLegacyWhisperTinyStorage } from './whisper/localWhisperEngine';
+import { HorseSilhouetteSvg } from './components/HorseSilhouetteSvg';
 import { CentralEvaluationTable } from './components/CentralEvaluationTable';
 import { EvaluationAudioNotesPanel } from './components/EvaluationAudioNotesPanel';
 import { HorsesAndBackupView } from './components/HorsesAndBackupView';
@@ -82,9 +81,6 @@ export default function App() {
   const [installedModels, setInstalledModels] = useState<InstalledWhisperModel[]>([]);
 
   // Interactive Anatomical Map & Contextual Selection State
-  const [activeTool] = useState<DrawingTool>('select');
-  const [activeColor] = useState<AnnotationColor>('#1E3A8A');
-  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<EvaluationHistorySnapshot[]>([]);
   const [redoStack, setRedoStack] = useState<EvaluationHistorySnapshot[]>([]);
   const [activeTablePopover, setActiveTablePopover] = useState<{
@@ -133,6 +129,7 @@ export default function App() {
           clips.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
           setVoiceClips(clips);
         }
+        await removeLegacyWhisperTinyStorage().catch(() => null);
         const models = await db.whisperModels.toArray();
         setInstalledModels(models);
       } catch (err) {
@@ -169,7 +166,6 @@ export default function App() {
     await setSetting('activeSessionId', nextSessionId);
     setUndoStack([]);
     setRedoStack([]);
-    setSelectedAnnotationId(null);
 
     if (nextSessionId) {
       const clips = await db.voiceClips
@@ -452,84 +448,6 @@ export default function App() {
       label: `${TOP_VIEW_ANCHORS[fromAnchor].labelEn} → ${TOP_VIEW_ANCHORS[toAnchor].labelEn}`,
     };
     handleUpdateAnnotations([...withoutDiag, newDiag]);
-  };
-
-  /**
-   * Apply a confirmed per-clip transcript suggestion to the session
-   */
-  const handleApplySuggestion = (sug: ProposedCaseSuggestion) => {
-    if (!activeSession) return;
-
-    if (sug.type === 'area_observation' && sug.areaId) {
-      setUndoStack((prev) => [
-        ...prev.slice(-24),
-        {
-          evaluationTable: activeSession.evaluationTable,
-          annotations: activeSession.annotations,
-        },
-      ]);
-      setRedoStack([]);
-
-      const targetSides: Side[] =
-        sug.side === 'both' || !sug.side ? ['left', 'right'] : [sug.side];
-
-      const nextTable = { ...activeSession.evaluationTable };
-
-      for (const side of targetSides) {
-        const cur = nextTable[sug.areaId][side];
-        const mergedSigns = Array.from(
-          new Set([...(cur.releaseSigns ?? []), ...(sug.releaseSigns ?? [])])
-        );
-        const updatedCell: AreaSideObservation = {
-          ...cur,
-          reaction: sug.reactionLevel !== undefined ? sug.reactionLevel : cur.reaction,
-          restriction: sug.restriction !== undefined ? sug.restriction : cur.restriction,
-          released: sug.released !== undefined ? sug.released : cur.released,
-          releaseSigns: mergedSigns,
-          note: cur.note
-            ? `${cur.note}; ${sug.noteToAppend ?? ''}`.trim()
-            : (sug.noteToAppend ?? ''),
-        };
-
-        nextTable[sug.areaId] = {
-          ...nextTable[sug.areaId],
-          [side]: updatedCell,
-        };
-      }
-
-      const nextAnnotations = syncAnnotationsWithTable(
-        nextTable,
-        activeSession.annotations
-      );
-
-      void persistSessionUpdate({
-        ...activeSession,
-        evaluationTable: nextTable,
-        annotations: nextAnnotations,
-      });
-      return;
-    }
-
-    if (
-      sug.type === 'diagonal' &&
-      sug.diagonalFrom &&
-      sug.diagonalTo &&
-      sug.diagonalFrom !== 'custom' &&
-      sug.diagonalTo !== 'custom'
-    ) {
-      handleSetPredominantDiagonalPreset(sug.diagonalFrom, sug.diagonalTo);
-      return;
-    }
-
-    const currentNotes = getUnifiedSessionNotes(activeSession);
-    const appendedNotes = currentNotes
-      ? `${currentNotes}\n${sug.sourceSentence}`
-      : sug.sourceSentence;
-    void persistSessionUpdate({
-      ...activeSession,
-      generalNotes: appendedNotes,
-      manualVoiceNotes: '',
-    });
   };
 
   const handleExportBackup = async () => {
@@ -955,7 +873,6 @@ export default function App() {
                   manualVoiceNotes: '',
                 });
               }}
-              onApplySuggestion={handleApplySuggestion}
               onNavigateToHorses={() => setActiveTab('horses')}
             />
 
@@ -972,10 +889,6 @@ export default function App() {
                       view="left"
                       evaluationTable={activeSession.evaluationTable}
                       annotations={activeSession.annotations}
-                      activeTool={activeTool}
-                      activeColor={activeColor}
-                      selectedAnnotationId={selectedAnnotationId}
-                      onSelectAnnotation={setSelectedAnnotationId}
                       onChangeAnnotations={handleUpdateAnnotations}
                       selectedAreaTarget={activeTablePopover}
                       hoveredAreaTarget={hoveredAreaTarget}
@@ -1013,10 +926,6 @@ export default function App() {
                       view="right"
                       evaluationTable={activeSession.evaluationTable}
                       annotations={activeSession.annotations}
-                      activeTool={activeTool}
-                      activeColor={activeColor}
-                      selectedAnnotationId={selectedAnnotationId}
-                      onSelectAnnotation={setSelectedAnnotationId}
                       onChangeAnnotations={handleUpdateAnnotations}
                       selectedAreaTarget={activeTablePopover}
                       hoveredAreaTarget={hoveredAreaTarget}
@@ -1093,10 +1002,6 @@ export default function App() {
                       view="top"
                       evaluationTable={activeSession.evaluationTable}
                       annotations={activeSession.annotations}
-                      activeTool="select"
-                      activeColor={activeColor}
-                      selectedAnnotationId={selectedAnnotationId}
-                      onSelectAnnotation={setSelectedAnnotationId}
                       onChangeAnnotations={handleUpdateAnnotations}
                       onSelectDiagonalAnchors={handleSetPredominantDiagonalPreset}
                       activeRegionFilter={activeRegionFilter}
@@ -1121,10 +1026,6 @@ export default function App() {
                       view={mobileActiveView}
                       evaluationTable={activeSession.evaluationTable}
                       annotations={activeSession.annotations}
-                      activeTool={activeTool}
-                      activeColor={activeColor}
-                      selectedAnnotationId={selectedAnnotationId}
-                      onSelectAnnotation={setSelectedAnnotationId}
                       onChangeAnnotations={handleUpdateAnnotations}
                       selectedAreaTarget={activeTablePopover}
                       hoveredAreaTarget={hoveredAreaTarget}
@@ -1199,10 +1100,6 @@ export default function App() {
                       view="top"
                       evaluationTable={activeSession.evaluationTable}
                       annotations={activeSession.annotations}
-                      activeTool="select"
-                      activeColor={activeColor}
-                      selectedAnnotationId={selectedAnnotationId}
-                      onSelectAnnotation={setSelectedAnnotationId}
                       onChangeAnnotations={handleUpdateAnnotations}
                       onSelectDiagonalAnchors={handleSetPredominantDiagonalPreset}
                       activeRegionFilter={activeRegionFilter}

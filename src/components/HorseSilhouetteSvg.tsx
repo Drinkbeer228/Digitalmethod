@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   AnatomicalAreaId,
   AnatomicalRegionId,
-  AnnotationColor,
   DiagramAnnotation,
   DiagonalAnchor,
   EvaluationTableState,
@@ -15,44 +14,25 @@ import {
   ANATOMICAL_AREAS,
   ANATOMICAL_REGIONS,
   BODY_PART_FILTERS,
-  BODY_SEGMENTS,
   BodyPartFilterId,
-  BodySegmentId,
   getAreaCoordinate,
   getAreaReactionEndpoints,
-  getBodySegmentForArea,
   matchesBodyPartFilter,
   TOP_VIEW_ANCHORS,
 } from '../data/anatomicalAreas';
-
-export type DrawingTool =
-  | 'select'
-  | 'reaction1'
-  | 'reaction2'
-  | 'reaction3'
-  | 'restriction'
-  | 'diagonal'
-  | 'eraser';
 
 interface HorseSilhouetteSvgProps {
   view: 'left' | 'right' | 'top';
   evaluationTable?: EvaluationTableState;
   annotations: DiagramAnnotation[];
-  activeTool?: DrawingTool;
-  activeColor?: AnnotationColor;
-  selectedAnnotationId?: string | null;
   selectedAreaTarget?: { areaId: AnatomicalAreaId; side: Side } | null;
   hoveredAreaTarget?: { areaId: AnatomicalAreaId; side?: Side } | null;
   activeRegionFilter?: AnatomicalRegionId | 'all';
   bodyPartFilter?: BodyPartFilterId;
   onChangeBodyPartFilter?: (filter: BodyPartFilterId) => void;
-  activeBodySegment?: BodySegmentId;
-  onSelectBodySegment?: (segment: BodySegmentId) => void;
   showPastelZones?: boolean;
   showLandmarkNumbers?: boolean;
-  hideZoomBar?: boolean;
   svgClassName?: string;
-  onSelectAnnotation?: (id: string | null) => void;
   onChangeAnnotations?: (
     next: DiagramAnnotation[],
     syncedChange?: {
@@ -194,8 +174,6 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
   activeRegionFilter = 'all',
   bodyPartFilter = 'all',
   onChangeBodyPartFilter,
-  activeBodySegment,
-  onSelectBodySegment,
   showPastelZones = true,
   showLandmarkNumbers = true,
   svgClassName,
@@ -355,87 +333,52 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
         <rect width={width} height={height} fill="#FAF9F6" />
         <rect width={width} height={height} fill={`url(#atlas-grid-${view})`} opacity={0.65} />
 
-        {/* LAYER 2A: Interactive 3-Segment Body Regions when activeBodySegment is provided on Left/Right */}
-        {showPastelZones && view !== 'top' && activeBodySegment ? (
-          <g data-testid={`layer-body-segments-${view}`}>
-            {BODY_SEGMENTS.map((seg) => {
-              const isSegActive = activeBodySegment === seg.id;
+        {/* LAYER 2: Five Brighter, Natural Color-Coded Anatomical Regions */}
+        {showPastelZones && (
+          <g data-testid={`layer-pastel-regions-${view}`}>
+            {ANATOMICAL_REGIONS.map((region) => {
+              const polygons =
+                view === 'top' ? region.topPolygons : region.leftPolygons;
+              if (polygons.length === 0) return null;
+
               return (
-                <g
-                  key={seg.id}
-                  data-testid={`svg-body-segment-${view}-${seg.id}`}
-                  className={readOnly ? '' : 'cursor-pointer'}
-                  onClick={(e) => {
-                    if (readOnly || !onSelectBodySegment) return;
-                    e.stopPropagation();
-                    onSelectBodySegment(seg.id);
-                  }}
-                >
-                  {seg.leftPolygons.map((poly, pIdx) => (
-                    <polygon
-                      key={`${seg.id}-${pIdx}`}
-                      points={pointsToSvgPolygon(poly, width, height, isMirrored)}
-                      fill={isSegActive ? seg.activeFill : seg.pastelFill}
-                      fillOpacity={isSegActive ? 0.72 : 0.35}
-                      stroke={isSegActive ? '#2B4C3F' : seg.pastelStroke}
-                      strokeWidth={isSegActive ? 2.8 : 1.4}
-                      strokeOpacity={isSegActive ? 0.9 : 0.6}
-                      strokeDasharray={isSegActive ? undefined : '5 3'}
-                      strokeLinejoin="round"
-                    />
-                  ))}
+                <g key={region.id} data-region-id={region.id}>
+                  {polygons.map((poly, pIdx) => {
+                    const matchesBodyPart =
+                      view === 'top' ||
+                      doesRegionPolygonMatchBodyPart(region.id, pIdx, bodyPartFilter);
+                    const isFilterFocused =
+                      (bodyPartFilter !== 'all' && matchesBodyPart) ||
+                      activeRegionFilter === region.id ||
+                      activeHighlightRegionId === region.id;
+                    const isDimmed =
+                      (bodyPartFilter !== 'all' && !matchesBodyPart) ||
+                      (activeRegionFilter !== 'all' && activeRegionFilter !== region.id);
+
+                    const fill = isFilterFocused ? region.activeFill : region.pastelFill;
+                    const stroke = isFilterFocused
+                      ? region.activeStroke
+                      : region.pastelStroke;
+                    const fillOpacity = isDimmed ? 0.18 : isFilterFocused ? 0.75 : 0.58;
+                    const strokeOpacity = isDimmed ? 0.25 : isFilterFocused ? 0.92 : 0.75;
+
+                    return (
+                      <polygon
+                        key={`${region.id}-${pIdx}`}
+                        points={pointsToSvgPolygon(poly, width, height, isMirrored)}
+                        fill={fill}
+                        fillOpacity={fillOpacity}
+                        stroke={stroke}
+                        strokeWidth={isFilterFocused ? 2.2 : 1.5}
+                        strokeOpacity={strokeOpacity}
+                        strokeLinejoin="round"
+                      />
+                    );
+                  })}
                 </g>
               );
             })}
           </g>
-        ) : (
-          /* LAYER 2B: Five Brighter, Natural Color-Coded Anatomical Regions */
-          showPastelZones && (
-            <g data-testid={`layer-pastel-regions-${view}`}>
-              {ANATOMICAL_REGIONS.map((region) => {
-                const polygons =
-                  view === 'top' ? region.topPolygons : region.leftPolygons;
-                if (polygons.length === 0) return null;
-
-                return (
-                  <g key={region.id} data-region-id={region.id}>
-                    {polygons.map((poly, pIdx) => {
-                      const matchesBodyPart =
-                        view === 'top' ||
-                        doesRegionPolygonMatchBodyPart(region.id, pIdx, bodyPartFilter);
-                      const isFilterFocused =
-                        (bodyPartFilter !== 'all' && matchesBodyPart) ||
-                        activeRegionFilter === region.id ||
-                        activeHighlightRegionId === region.id;
-                      const isDimmed =
-                        (bodyPartFilter !== 'all' && !matchesBodyPart) ||
-                        (activeRegionFilter !== 'all' && activeRegionFilter !== region.id);
-
-                      const fill = isFilterFocused ? region.activeFill : region.pastelFill;
-                      const stroke = isFilterFocused
-                        ? region.activeStroke
-                        : region.pastelStroke;
-                      const fillOpacity = isDimmed ? 0.18 : isFilterFocused ? 0.75 : 0.58;
-                      const strokeOpacity = isDimmed ? 0.25 : isFilterFocused ? 0.92 : 0.75;
-
-                      return (
-                        <polygon
-                          key={`${region.id}-${pIdx}`}
-                          points={pointsToSvgPolygon(poly, width, height, isMirrored)}
-                          fill={fill}
-                          fillOpacity={fillOpacity}
-                          stroke={stroke}
-                          strokeWidth={isFilterFocused ? 2.2 : 1.5}
-                          strokeOpacity={strokeOpacity}
-                          strokeLinejoin="round"
-                        />
-                      );
-                    })}
-                  </g>
-                );
-              })}
-            </g>
-          )
         )}
 
         {/* LAYER 3: Authoritative Anatomical Horse Line-Art Image (Multiply Blend Over Pastel Zones) */}
@@ -744,9 +687,7 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
                   {(showLandmarkDots || hasObservation || isSelected || isHovered) && (
                     <g
                       opacity={
-                        matchesBodyPartFilter(area.id, bodyPartFilter) &&
-                        (!activeBodySegment ||
-                          getBodySegmentForArea(area.id) === activeBodySegment)
+                        matchesBodyPartFilter(area.id, bodyPartFilter)
                           ? 1
                           : isSelected || isHovered
                             ? 1
@@ -816,7 +757,6 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
                   onPointerLeave={() => onHoverArea?.(null)}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onSelectBodySegment?.(getBodySegmentForArea(area.id));
                     onAreaLandmarkClick?.(area.id, view);
                   }}
                 >

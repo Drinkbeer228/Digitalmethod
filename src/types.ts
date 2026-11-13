@@ -180,7 +180,7 @@ export interface BodyworkSession {
   updatedAt: string;
 }
 
-export type WhisperModelId = 'whisper-base' | 'custom-imported';
+export type WhisperModelId = 'whisper-base';
 
 export interface InstalledWhisperModel {
   id: WhisperModelId;

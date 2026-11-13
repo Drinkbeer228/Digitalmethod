@@ -1043,8 +1043,7 @@ export async function importLocalWhisperFiles(
     }
   }
 
-  const modelId: 'whisper-base' =
-    targetModelChoice === 'custom-imported' ? 'whisper-base' : 'whisper-base';
+  const modelId: 'whisper-base' = targetModelChoice ?? 'whisper-base';
   const spec = WHISPER_MODEL_SPECS[modelId];
 
   // Step 2: Normalize file paths and read buffers into memory for pre-installation validation
@@ -1531,18 +1530,6 @@ export async function deleteInstalledWhisperModel(
       const validRemaining = remaining.filter((r) => (r.id as string) !== 'whisper-tiny');
       if (validRemaining.length > 0 && !validRemaining.some((r) => r.active)) {
         await db.whisperModels.update(validRemaining[0].id, { active: true });
-      }
-    });
-  }
-}
-
-export async function setActiveWhisperModel(modelId: WhisperModelId): Promise<void> {
-  clearCachedWhisperPipeline();
-  if (hasIndexedDB()) {
-    await db.transaction('rw', db.whisperModels, async () => {
-      const all = await db.whisperModels.toArray();
-      for (const m of all) {
-        await db.whisperModels.update(m.id, { active: m.id === modelId });
       }
     });
   }

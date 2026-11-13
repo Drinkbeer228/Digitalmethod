@@ -12,7 +12,6 @@ import {
   ANATOMICAL_AREAS,
   ANATOMICAL_REGIONS,
   BodyPartFilterId,
-  BodySegmentId,
   matchesBodyPartFilter,
 } from '../data/anatomicalAreas';
 import {
@@ -52,8 +51,6 @@ interface CentralEvaluationTableProps {
   onHoverArea?: (target: { areaId: AnatomicalAreaId; side?: Side } | null) => void;
   activeRegionFilter?: AnatomicalRegionId | 'all';
   bodyPartFilter?: BodyPartFilterId;
-  /** Active 3-segment body region ('head_neck' | 'torso_pelvis' | 'limbs') for the unified single-screen view */
-  activeBodySegment?: BodySegmentId;
   /** Active side ('left' | 'right') for the unified single-screen zone list */
   mobileSingleSide?: Side | null;
   /** Optional class applied only to the table/list container, never hiding the fixed Bottom Sheet */

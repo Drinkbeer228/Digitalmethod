@@ -1001,26 +1001,6 @@ export function syncAnnotationsWithTable(
   return [...next, ...topAnnotations];
 }
 
-export function findNearestAnatomicalArea(
-  point: Point,
-  view: 'left' | 'right',
-  maxDistance = 0.12
-): AnatomicalAreaId | undefined {
-  let bestId: AnatomicalAreaId | undefined;
-  let bestDist = maxDistance;
-  for (const area of ANATOMICAL_AREAS) {
-    const coord = getAreaCoordinate(area.id, view);
-    const dx = point.x - coord.x;
-    const dy = point.y - coord.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < bestDist) {
-      bestDist = dist;
-      bestId = area.id;
-    }
-  }
-  return bestId;
-}
-
 export const TOP_VIEW_ANCHORS: Record<
   | 'left_atlas'
   | 'right_atlas'

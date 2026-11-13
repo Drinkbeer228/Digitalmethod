@@ -8,7 +8,6 @@ import {
   BodyworkSession,
   InstalledWhisperModel,
   Language,
-  ProposedCaseSuggestion,
   VoiceRecordingClip,
 } from '../types';
 import { TRANSLATIONS } from '../data/translations';
@@ -34,7 +33,6 @@ interface EvaluationAudioNotesPanelProps {
   onSaveClip: (clip: VoiceRecordingClip) => Promise<void>;
   onDeleteClip: (clipId: string) => Promise<void>;
   onAppendTranscriptToSessionNotes: (text: string) => void;
-  onApplySuggestion?: (suggestion: ProposedCaseSuggestion) => void;
   installedModels: InstalledWhisperModel[];
   onNavigateToHorses?: () => void;
   isOpen?: boolean;
