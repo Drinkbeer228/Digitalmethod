@@ -3,7 +3,15 @@
  * Reuses and adapts the strict validation architecture from attached
  * `pwa-starter-kit` (src/domain/backup.ts & src/db/backupIo.ts).
  */
-import { BodyworkSession, HorseProfile, Language, VoiceRecordingClip } from '../types';
+import {
+  BodyworkSession,
+  HorseProfile,
+  Language,
+  SessionPhoto,
+  VoiceRecordingClip,
+} from '../types';
+
+export type SerializedSessionPhoto = Omit<SessionPhoto, 'imageBlob'>;
 
 export const BACKUP_FORMAT = 'masterson-case-digital-backup';
 export const BACKUP_VERSION = 1;
@@ -12,6 +20,8 @@ export interface BackupPayload {
   horses: HorseProfile[];
   sessions: BodyworkSession[];
   voiceClips: Omit<VoiceRecordingClip, 'audioBlob'>[];
+  /** Optional: backups made before photo support simply omit it. */
+  sessionPhotos?: SerializedSessionPhoto[];
   language: Language;
 }
 
@@ -95,6 +105,39 @@ export function parseBackup(raw: string): BackupParseResult {
     seenSessions.add(s.id);
   }
 
+  const sessionPhotos: SerializedSessionPhoto[] = [];
+  if (data.sessionPhotos !== undefined) {
+    if (!Array.isArray(data.sessionPhotos)) {
+      return { ok: false, reason: 'corrupt-records', detail: 'Invalid sessionPhotos list' };
+    }
+    const seenPhotos = new Set<string>();
+    for (const p of data.sessionPhotos) {
+      if (
+        !isRecord(p) ||
+        typeof p.id !== 'string' ||
+        !p.id.trim() ||
+        typeof p.sessionId !== 'string' ||
+        (p.kind !== 'before' && p.kind !== 'after') ||
+        typeof p.imageDataUrl !== 'string' ||
+        !p.imageDataUrl.startsWith('data:image/')
+      ) {
+        return { ok: false, reason: 'corrupt-records', detail: 'Invalid session photo record' };
+      }
+      if (seenPhotos.has(p.id)) {
+        return { ok: false, reason: 'corrupt-records', detail: `Duplicate photo id: ${p.id}` };
+      }
+      if (!seenSessions.has(p.sessionId)) {
+        return {
+          ok: false,
+          reason: 'corrupt-records',
+          detail: `Photo ${p.id} references unknown session ${p.sessionId}`,
+        };
+      }
+      seenPhotos.add(p.id);
+      sessionPhotos.push(p as unknown as SerializedSessionPhoto);
+    }
+  }
+
   const voiceClips = Array.isArray(data.voiceClips)
     ? (data.voiceClips as Omit<VoiceRecordingClip, 'audioBlob'>[])
     : [];
@@ -109,6 +152,7 @@ export function parseBackup(raw: string): BackupParseResult {
         horses: data.horses as HorseProfile[],
         sessions: data.sessions as BodyworkSession[],
         voiceClips,
+        sessionPhotos,
         language: data.language === 'ru' ? 'ru' : 'en',
       },
     },

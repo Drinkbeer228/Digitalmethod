@@ -16,9 +16,14 @@ import {
   QUICK_RELEASE_CHIPS,
   RESISTANCE_SIGNS,
 } from '../data/translations';
-import { BodyworkSession, HorseProfile } from '../types';
+import { BodyworkSession, HorseProfile, SessionPhoto } from '../types';
+import { dataUrlToBlob } from '../db/backup';
+import {
+  TEST_JPEG_LANDSCAPE_DATA_URL,
+  TEST_JPEG_PORTRAIT_DATA_URL,
+} from './photoTestFixtures';
 import { buildReportFromSession, getUnifiedSessionNotes } from './reportGenerator';
-import { buildPdfFileName, generateSessionPdfBytes } from './pdfExport';
+import { buildPdfFileName, generateSessionPdfBytes, groupPhotosForPdf } from './pdfExport';
 
 function makeTestFixtures(): { horse: HorseProfile; session: BodyworkSession } {
   const nowIso = '2026-04-17T10:00:00.000Z';
@@ -230,5 +235,73 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
     const fileName = buildPdfFileName(horse, session);
     assert.ok(fileName.startsWith('Masterson_Report_'));
     assert.ok(fileName.endsWith('_2026-04-17.pdf'));
+  });
+  it('embeds Before / After photos (Blob and DataURL) and keeps the report valid', async () => {
+    const { horse, session } = makeTestFixtures();
+    const photos: SessionPhoto[] = [
+      {
+        id: 'ph-before',
+        sessionId: session.id,
+        kind: 'before',
+        createdAt: '2026-04-17T10:05:00.000Z',
+        width: 48,
+        height: 32,
+        mimeType: 'image/jpeg',
+        sizeBytes: 800,
+        imageBlob: dataUrlToBlob(TEST_JPEG_LANDSCAPE_DATA_URL),
+      },
+      {
+        id: 'ph-after',
+        sessionId: session.id,
+        kind: 'after',
+        createdAt: '2026-04-17T11:10:00.000Z',
+        width: 32,
+        height: 48,
+        mimeType: 'image/jpeg',
+        sizeBytes: 850,
+        imageDataUrl: TEST_JPEG_PORTRAIT_DATA_URL,
+        caption: 'Topline',
+      },
+      {
+        id: 'ph-broken',
+        sessionId: session.id,
+        kind: 'after',
+        createdAt: '2026-04-17T11:12:00.000Z',
+        width: 10,
+        height: 10,
+        mimeType: 'image/jpeg',
+        sizeBytes: 4,
+        imageDataUrl: 'data:image/jpeg;base64,AAAA',
+      },
+    ];
+
+    const plain = await generateSessionPdfBytes(horse, session, 'unified', 'en');
+    const withPhotos = await generateSessionPdfBytes(horse, session, 'unified', 'ru', photos);
+    const doc = await PDFDocument.load(withPhotos);
+    const pages = doc.getPageCount();
+    assert.ok(pages === 2 || pages === 3, `expected 2–3 pages, got ${pages}`);
+    assert.ok(withPhotos.byteLength > plain.byteLength, 'photo bytes should be embedded');
+    assert.equal((await PDFDocument.load(plain)).getPageCount(), 2, 'no photos → unchanged 2 pages');
+  });
+
+  it('groups photos by kind, oldest first, max two per kind', () => {
+    const mk = (id: string, kind: 'before' | 'after', t: string): SessionPhoto => ({
+      id,
+      sessionId: 's',
+      kind,
+      createdAt: t,
+      width: 1,
+      height: 1,
+      mimeType: 'image/jpeg',
+      sizeBytes: 1,
+    });
+    const groups = groupPhotosForPdf([
+      mk('a3', 'after', '2026-01-01T03:00:00Z'),
+      mk('b1', 'before', '2026-01-01T01:00:00Z'),
+      mk('a1', 'after', '2026-01-01T01:00:00Z'),
+      mk('a2', 'after', '2026-01-01T02:00:00Z'),
+    ]);
+    assert.deepEqual(groups.before.map((p) => p.id), ['b1']);
+    assert.deepEqual(groups.after.map((p) => p.id), ['a1', 'a2']);
   });
 });

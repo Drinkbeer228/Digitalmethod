@@ -138,6 +138,29 @@ export interface VoiceRecordingClip {
   recordingState?: 'recording' | 'interrupted' | 'completed';
 }
 
+export type SessionPhotoKind = 'before' | 'after';
+
+/**
+ * Before / After session photo. Stored in its own Dexie table (`sessionPhotos`)
+ * so the frequently rewritten session record never carries image bytes.
+ * Images are compressed client-side to JPEG before storage.
+ */
+export interface SessionPhoto {
+  id: string;
+  sessionId: string;
+  kind: SessionPhotoKind;
+  createdAt: string;
+  width: number;
+  height: number;
+  mimeType: string;
+  sizeBytes: number;
+  imageBlob?: Blob;
+  imageDataUrl?: string; // Used for JSON backup serialization
+  caption?: string;
+}
+
+export const MAX_PHOTOS_PER_KIND = 2;
+
 export interface ReportSections {
   initialEvaluation: string; // Direct observations
   restrictionsIdentified: string; // Direct observations

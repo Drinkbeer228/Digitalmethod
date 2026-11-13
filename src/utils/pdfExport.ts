@@ -16,6 +16,8 @@ import {
   Language,
   Point,
   ReactionLevel,
+  SessionPhoto,
+  SessionPhotoKind,
 } from '../types';
 import { buildReportFromSession, getUnifiedSessionNotes } from './reportGenerator';
 
@@ -645,6 +647,188 @@ function hasAnyCellObservation(obs: AreaSideObservation | undefined): boolean {
   );
 }
 
+// ===========================================================================
+// BEFORE / AFTER PHOTOS
+// ===========================================================================
+
+const PHOTO_BAND_HEIGHT = 168;
+const PHOTOS_PER_KIND_IN_PDF = 2;
+
+export function groupPhotosForPdf(photos: SessionPhoto[]): Record<SessionPhotoKind, SessionPhoto[]> {
+  const sorted = [...photos].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return {
+    before: sorted.filter((p) => p.kind === 'before').slice(0, PHOTOS_PER_KIND_IN_PDF),
+    after: sorted.filter((p) => p.kind === 'after').slice(0, PHOTOS_PER_KIND_IN_PDF),
+  };
+}
+
+function decodeBase64ToBytes(b64: string): Uint8Array {
+  if (typeof atob === 'function') {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  return new Uint8Array(Buffer.from(b64, 'base64'));
+}
+
+async function getPhotoBytes(photo: SessionPhoto): Promise<{ bytes: Uint8Array; isPng: boolean } | null> {
+  if (photo.imageBlob) {
+    const bytes = new Uint8Array(await photo.imageBlob.arrayBuffer());
+    return { bytes, isPng: photo.imageBlob.type === 'image/png' };
+  }
+  if (photo.imageDataUrl) {
+    const comma = photo.imageDataUrl.indexOf(',');
+    if (comma === -1) return null;
+    const header = photo.imageDataUrl.slice(0, comma);
+    return {
+      bytes: decodeBase64ToBytes(photo.imageDataUrl.slice(comma + 1)),
+      isPng: header.includes('image/png'),
+    };
+  }
+  return null;
+}
+
+function formatPhotoTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * Draws a "Before | After" photo band: title strip + two columns, each holding up to
+ * two aspect-fit images with captions. Undecodable images become a labelled placeholder.
+ */
+async function drawPhotoBand(
+  pdfDoc: PDFDocument,
+  page: PDFPage,
+  groups: Record<SessionPhotoKind, SessionPhoto[]>,
+  x: number,
+  topY: number,
+  width: number,
+  regular: PDFFont,
+  bold: PDFFont,
+  lang: Language
+): Promise<void> {
+  const bandH = PHOTO_BAND_HEIGHT;
+  page.drawRectangle({
+    x,
+    y: topY - bandH,
+    width,
+    height: bandH,
+    color: COLOR_WHITE,
+    borderColor: COLOR_BORDER,
+    borderWidth: 0.65,
+  });
+  page.drawText(lang === 'ru' ? 'Фото: до и после сессии' : 'Photos: Before & After Session', {
+    x: x + 8,
+    y: topY - 12,
+    size: 8,
+    font: bold,
+    color: COLOR_FOREST,
+  });
+
+  const gutter = 10;
+  const colW = (width - 16 - gutter) / 2;
+  const colTop = topY - 20;
+  const labelH = 12;
+  const captionH = 11;
+  const cellGap = 6;
+  const cellH = bandH - 20 - labelH - captionH - 8;
+
+  const kinds: SessionPhotoKind[] = ['before', 'after'];
+  for (let k = 0; k < kinds.length; k++) {
+    const kind = kinds[k];
+    const colX = x + 8 + k * (colW + gutter);
+    const label =
+      kind === 'before'
+        ? lang === 'ru' ? 'ДО' : 'BEFORE'
+        : lang === 'ru' ? 'ПОСЛЕ' : 'AFTER';
+    page.drawText(label, {
+      x: colX,
+      y: colTop - 8,
+      size: 7.4,
+      font: bold,
+      color: kind === 'before' ? COLOR_SLATE : COLOR_RELEASED,
+    });
+
+    const list = groups[kind];
+    if (list.length === 0) {
+      page.drawText(lang === 'ru' ? 'Фото не добавлено' : 'No photo added', {
+        x: colX,
+        y: colTop - labelH - cellH / 2,
+        size: 7,
+        font: regular,
+        color: COLOR_MUTED,
+      });
+      continue;
+    }
+
+    const cellW = (colW - cellGap * (PHOTOS_PER_KIND_IN_PDF - 1)) / PHOTOS_PER_KIND_IN_PDF;
+    const cellTop = colTop - labelH;
+    for (let i = 0; i < list.length; i++) {
+      const photo = list[i];
+      const cellX = colX + i * (cellW + cellGap);
+      page.drawRectangle({
+        x: cellX,
+        y: cellTop - cellH,
+        width: cellW,
+        height: cellH,
+        color: COLOR_ROW_ALT,
+      });
+
+      let embedded = false;
+      try {
+        const data = await getPhotoBytes(photo);
+        if (data) {
+          const img = data.isPng ? await pdfDoc.embedPng(data.bytes) : await pdfDoc.embedJpg(data.bytes);
+          const scale = Math.min(cellW / img.width, cellH / img.height);
+          const w = img.width * scale;
+          const h = img.height * scale;
+          page.drawImage(img, {
+            x: cellX + (cellW - w) / 2,
+            y: cellTop - cellH + (cellH - h) / 2,
+            width: w,
+            height: h,
+          });
+          embedded = true;
+        }
+      } catch {
+        embedded = false;
+      }
+      if (!embedded) {
+        page.drawText(lang === 'ru' ? 'Фото недоступно' : 'Photo unavailable', {
+          x: cellX + 6,
+          y: cellTop - cellH / 2,
+          size: 6.8,
+          font: regular,
+          color: COLOR_MUTED,
+        });
+      }
+      page.drawRectangle({
+        x: cellX,
+        y: cellTop - cellH,
+        width: cellW,
+        height: cellH,
+        borderColor: COLOR_BORDER,
+        borderWidth: 0.6,
+      });
+
+      const time = formatPhotoTime(photo.createdAt);
+      const caption = [label.charAt(0) + label.slice(1).toLowerCase(), photo.caption?.trim(), time]
+        .filter(Boolean)
+        .join(' · ');
+      page.drawText(caption.slice(0, 48), {
+        x: cellX,
+        y: cellTop - cellH - 9,
+        size: 6.6,
+        font: regular,
+        color: COLOR_SLATE,
+      });
+    }
+  }
+}
+
 /**
  * Generates a unified 2-page A4 PDF document (Uint8Array) 100% offline using pdf-lib,
  * embedded DejaVuSans TrueType fonts (Latin + Cyrillic), high-DPI composited diagrams,
@@ -654,7 +838,8 @@ export async function generateSessionPdfBytes(
   horse: HorseProfile,
   session: BodyworkSession,
   _mode: 'unified' | 'certification' | 'owner' = 'unified',
-  lang: Language = 'en'
+  lang: Language = 'en',
+  photos: SessionPhoto[] = []
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
   const { regular, bold } = await getEmbeddedFonts(pdfDoc);
@@ -966,17 +1151,8 @@ export async function generateSessionPdfBytes(
     });
   });
 
-  // Page 1 Footer
-  page1.drawText(
-    `${horse.name} · ${t.sessionNum} #${session.sessionNumber} · ${session.date} · Page 1 / 2`,
-    {
-      x: margin,
-      y: margin - 10,
-      size: 7,
-      font: regular,
-      color: COLOR_MUTED,
-    }
-  );
+  // Page footers are drawn at the end, once the total page count is known
+  const footerPrefix = `${horse.name} · ${t.sessionNum} #${session.sessionNumber} · ${session.date}`;
 
   // =========================================================================
   // PAGE 2: UNIFIED EVALUATED ZONES SUMMARY TABLE & SESSION NOTES
@@ -1217,7 +1393,36 @@ export async function generateSessionPdfBytes(
     6
   );
 
-  // 4. Post-Session Care Recommendations
+  // 4. Before / After Photos (page 2 when it fits, otherwise a dedicated page 3)
+  const photoGroups = groupPhotosForPdf(photos);
+  if (photoGroups.before.length > 0 || photoGroups.after.length > 0) {
+    const bandH = PHOTO_BAND_HEIGHT;
+    // Leave room on page 2 for at least a short Owner Care box below the photos
+    if (p2Y - bandH - 60 >= margin + 8) {
+      await drawPhotoBand(pdfDoc, page2, photoGroups, margin, p2Y, contentW, regular, bold, lang);
+      p2Y -= bandH + 8;
+    } else {
+      const page3 = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+      let p3Y = A4_HEIGHT - margin;
+      page3.drawRectangle({
+        x: margin,
+        y: p3Y - 28,
+        width: contentW,
+        height: 28,
+        color: COLOR_FOREST,
+      });
+      page3.drawText(
+        lang === 'ru'
+          ? `ФОТО ДО / ПОСЛЕ — ${horse.name.toUpperCase()} (СЕССИЯ №${session.sessionNumber})`
+          : `BEFORE / AFTER PHOTOS — ${horse.name.toUpperCase()} (SESSION #${session.sessionNumber})`,
+        { x: margin + 10, y: p3Y - 18, size: 9.5, font: bold, color: COLOR_WHITE }
+      );
+      p3Y -= 36;
+      await drawPhotoBand(pdfDoc, page3, photoGroups, margin, p3Y, contentW, regular, bold, lang);
+    }
+  }
+
+  // 5. Post-Session Care Recommendations
   drawNarrativeSection(
     t.sec6Title,
     syncedSections.postSessionCareNotes,
@@ -1225,17 +1430,17 @@ export async function generateSessionPdfBytes(
     true
   );
 
-  // Page 2 Footer
-  page2.drawText(
-    `${horse.name} · ${t.sessionNum} #${session.sessionNumber} · ${session.date} · Page 2 / 2`,
-    {
+  // Footers on every page: "<horse> · Session #N · date · Page X / Y"
+  const allPages = pdfDoc.getPages();
+  allPages.forEach((pg, idx) => {
+    pg.drawText(`${footerPrefix} · Page ${idx + 1} / ${allPages.length}`, {
       x: margin,
       y: margin - 10,
       size: 7,
       font: regular,
       color: COLOR_MUTED,
-    }
-  );
+    });
+  });
 
   return pdfDoc.save();
 }
@@ -1255,9 +1460,10 @@ export async function buildSessionPdfFile(
   horse: HorseProfile,
   session: BodyworkSession,
   mode: 'unified' | 'certification' | 'owner' = 'unified',
-  lang: Language = 'en'
+  lang: Language = 'en',
+  photos: SessionPhoto[] = []
 ): Promise<File> {
-  const bytes = await generateSessionPdfBytes(horse, session, mode, lang);
+  const bytes = await generateSessionPdfBytes(horse, session, mode, lang, photos);
   const filename = buildPdfFileName(horse, session);
   const bufferSlice = bytes.buffer.slice(
     bytes.byteOffset,

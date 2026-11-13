@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AnatomicalAreaId,
   AnatomicalRegionId,
@@ -17,6 +17,8 @@ import {
   Language,
   ReactionLevel,
   ReportSections,
+  SessionPhoto,
+  SessionPhotoKind,
   Side,
   VoiceRecordingClip,
 } from './types';
@@ -24,6 +26,8 @@ import {
   db,
   deleteDemonstrationCase,
   ensureInitialSeed,
+  estimateStorage,
+  loadSessionPhotos,
   restoreDemonstrationCase,
   setSetting,
 } from './db/database';
@@ -35,7 +39,9 @@ import {
   parseBackup,
   readFileAsText,
   serializeBackup,
+  type SerializedSessionPhoto,
 } from './db/backup';
+import { compressImageFile } from './utils/imageCompression';
 import {
   BodyPartFilterId,
   createEmptyEvaluationTable,
@@ -52,13 +58,16 @@ import { HorseSilhouetteSvg } from './components/HorseSilhouetteSvg';
 import { CentralEvaluationTable } from './components/CentralEvaluationTable';
 import { EvaluationAudioNotesPanel } from './components/EvaluationAudioNotesPanel';
 import { HorsesAndBackupView } from './components/HorsesAndBackupView';
+import { SessionPhotosPanel } from './components/SessionPhotosPanel';
 import { OfflineConnectivityBanner, PWAInstallAction } from './pwa/PWAInstallBanner';
 import {
+  Camera,
   Check,
   Mic,
   Redo2,
   Save,
   Undo2,
+  X,
 } from 'lucide-react';
 
 type ActiveTab = 'editor' | 'horses';
@@ -101,6 +110,8 @@ export default function App() {
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
   );
   const [isAudioDrawerOpen, setIsAudioDrawerOpen] = useState<boolean>(false);
+  const [sessionPhotos, setSessionPhotos] = useState<SessionPhoto[]>([]);
+  const [isPhotoDrawerOpen, setIsPhotoDrawerOpen] = useState<boolean>(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -149,6 +160,85 @@ export default function App() {
     null;
 
   const t = TRANSLATIONS[lang];
+
+  const activeSessionKey = activeSession?.id ?? '';
+  const activeSessionKeyRef = useRef(activeSessionKey);
+  activeSessionKeyRef.current = activeSessionKey;
+  useEffect(() => {
+    let cancelled = false;
+    void loadSessionPhotos(activeSessionKey)
+      .then((rows) => {
+        if (!cancelled) setSessionPhotos(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setSessionPhotos([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionKey]);
+
+  /**
+   * Compresses picked photos on-device (max 1600px, JPEG ~80%) and stores them in `sessionPhotos`.
+   * Throws a user-facing message on decode or storage-quota errors.
+   */
+  const handleAddSessionPhotos = async (kind: SessionPhotoKind, files: File[]) => {
+    const sessionId = activeSessionKey;
+    if (!sessionId) return;
+    const added: SessionPhoto[] = [];
+    for (const [idx, file] of files.entries()) {
+      let compressed;
+      try {
+        compressed = await compressImageFile(file);
+      } catch {
+        throw new Error(
+          lang === 'ru'
+            ? 'Не удалось прочитать фото. Попробуйте другой снимок или формат JPEG.'
+            : 'Could not read this photo. Try another shot or a JPEG image.'
+        );
+      }
+      const photo: SessionPhoto = {
+        id: `photo-${kind}-${Date.now()}-${idx}`,
+        sessionId,
+        kind,
+        createdAt: new Date().toISOString(),
+        width: compressed.width,
+        height: compressed.height,
+        mimeType: compressed.mimeType,
+        sizeBytes: compressed.blob.size,
+        imageBlob: compressed.blob,
+      };
+      try {
+        await db.sessionPhotos.put(photo);
+      } catch (err) {
+        const isQuota =
+          err instanceof Error && /quota/i.test(`${err.name} ${err.message}`);
+        const { usage, quota } = await estimateStorage();
+        const usageInfo =
+          usage !== null && quota !== null
+            ? ` (${Math.round(usage / 1e6)} / ${Math.round(quota / 1e6)} MB)`
+            : '';
+        throw new Error(
+          isQuota
+            ? lang === 'ru'
+              ? `Недостаточно места в хранилище${usageInfo}. Удалите старые фото или аудио.`
+              : `Device storage is full${usageInfo}. Delete old photos or audio clips.`
+            : lang === 'ru'
+              ? 'Не удалось сохранить фото на устройстве.'
+              : 'Could not save the photo on this device.'
+        );
+      }
+      added.push(photo);
+    }
+    if (added.length > 0 && activeSessionKeyRef.current === sessionId) {
+      setSessionPhotos(await loadSessionPhotos(sessionId));
+    }
+  };
+
+  const handleDeleteSessionPhoto = async (photoId: string) => {
+    await db.sessionPhotos.delete(photoId);
+    setSessionPhotos((prev) => prev.filter((p) => p.id !== photoId));
+  };
 
   const handleLanguageChange = async (nextLang: Language) => {
     setLang(nextLang);
@@ -265,10 +355,11 @@ export default function App() {
   };
 
   const handleDeleteHorse = async (horseId: string) => {
-    await db.transaction('rw', db.horses, db.sessions, db.voiceClips, async () => {
+    await db.transaction('rw', [db.horses, db.sessions, db.voiceClips, db.sessionPhotos], async () => {
       const horseSess = await db.sessions.where('horseId').equals(horseId).toArray();
       for (const s of horseSess) {
         await db.voiceClips.where('sessionId').equals(s.id).delete();
+        await db.sessionPhotos.where('sessionId').equals(s.id).delete();
       }
       await db.sessions.where('horseId').equals(horseId).delete();
       await db.horses.delete(horseId);
@@ -288,8 +379,9 @@ export default function App() {
   };
 
   const handleDeleteSession = async (sessionId: string) => {
-    await db.transaction('rw', db.sessions, db.voiceClips, async () => {
+    await db.transaction('rw', [db.sessions, db.voiceClips, db.sessionPhotos], async () => {
       await db.voiceClips.where('sessionId').equals(sessionId).delete();
+      await db.sessionPhotos.where('sessionId').equals(sessionId).delete();
       await db.sessions.delete(sessionId);
     });
     const nextSessions = sessions.filter((s) => s.id !== sessionId);
@@ -469,12 +561,29 @@ export default function App() {
       serializedClips.push({ ...rest, audioDataUrl: dataUrl });
     }
 
+    const allPhotos = await db.sessionPhotos.toArray();
+    const serializedPhotos: SerializedSessionPhoto[] = [];
+    for (const p of allPhotos) {
+      let dataUrl = p.imageDataUrl;
+      if (!dataUrl && p.imageBlob) {
+        try {
+          dataUrl = await blobToDataUrl(p.imageBlob);
+        } catch {
+          // Skip unreadable photo blobs rather than failing the whole backup
+        }
+      }
+      if (!dataUrl) continue;
+      const { imageBlob: _omittedImage, ...rest } = p;
+      serializedPhotos.push({ ...rest, imageDataUrl: dataUrl });
+    }
+
     const nowIso = new Date().toISOString();
     const json = serializeBackup(
       {
         horses: allHorses,
         sessions: allSessions,
         voiceClips: serializedClips,
+        sessionPhotos: serializedPhotos,
         language: lang,
       },
       nowIso
@@ -497,8 +606,23 @@ export default function App() {
         };
       }
 
-      const { horses: inHorses, sessions: inSessions, voiceClips: inClips, language } =
-        parsed.backup.data;
+      const {
+        horses: inHorses,
+        sessions: inSessions,
+        voiceClips: inClips,
+        sessionPhotos: inPhotos = [],
+        language,
+      } = parsed.backup.data;
+
+      const hydratedPhotos: SessionPhoto[] = inPhotos.map((p) => {
+        try {
+          const blob = dataUrlToBlob(p.imageDataUrl ?? '');
+          const { imageDataUrl: _omitted, ...rest } = p;
+          return { ...rest, imageBlob: blob, sizeBytes: blob.size };
+        } catch {
+          return p as SessionPhoto;
+        }
+      });
 
       const hydratedClips: VoiceRecordingClip[] = inClips.map((c) => {
         if (c.audioDataUrl) {
@@ -518,14 +642,17 @@ export default function App() {
         db.horses,
         db.sessions,
         db.voiceClips,
+        db.sessionPhotos,
         db.settings,
         async () => {
           await db.horses.clear();
           await db.sessions.clear();
           await db.voiceClips.clear();
+          await db.sessionPhotos.clear();
           await db.horses.bulkPut(inHorses);
           await db.sessions.bulkPut(inSessions);
           await db.voiceClips.bulkPut(hydratedClips);
+          await db.sessionPhotos.bulkPut(hydratedPhotos);
           await db.settings.put({ key: 'language', value: language });
         }
       );
@@ -569,7 +696,7 @@ export default function App() {
               e.preventDefault();
               setActiveTab('editor');
             }}
-            className="text-xs sm:text-sm md:text-base font-editorial font-bold tracking-tight text-[#2B4C3F] truncate shrink-0"
+            className="hidden min-[440px]:block text-xs sm:text-sm md:text-base font-editorial font-bold tracking-tight text-[#2B4C3F] truncate shrink-0"
           >
             <span className="sm:hidden">Masterson</span>
             <span className="hidden sm:inline">{t.appName}</span>
@@ -598,7 +725,7 @@ export default function App() {
                   type="button"
                   data-testid={`nav-tab-${tab.id}`}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-3 sm:px-4 py-1.5 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                  className={`px-3 max-[359px]:px-2 sm:px-4 py-1.5 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
                     activeTab === tab.id
                       ? 'bg-[#2B4C3F] text-white shadow-2xs'
                       : 'text-slate-700 hover:text-slate-900'
@@ -618,6 +745,7 @@ export default function App() {
                   if (activeTab !== 'editor') {
                     setActiveTab('editor');
                   }
+                  setIsPhotoDrawerOpen(false);
                   setIsAudioDrawerOpen((v) => !v);
                 }}
                 title={
@@ -630,7 +758,7 @@ export default function App() {
                     ? `Аудиозаписи (${voiceClips.length})`
                     : `Audio Clips (${voiceClips.length})`
                 }
-                className={`relative min-h-[34px] px-2.5 py-1 rounded-lg border text-xs font-semibold inline-flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                className={`relative min-h-[34px] px-2.5 max-[359px]:px-1.5 py-1 rounded-lg border text-xs font-semibold inline-flex items-center justify-center gap-1 transition-colors cursor-pointer ${
                   isAudioDrawerOpen
                     ? 'bg-[#2B4C3F] text-white border-[#2B4C3F]'
                     : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
@@ -643,6 +771,39 @@ export default function App() {
                     className="px-1.5 py-0.5 rounded-full bg-[#2B4C3F] text-white font-tabular text-[10px] font-bold leading-none"
                   >
                     {voiceClips.length}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Before / After Photos Button (📷 with photo count badge if > 0) */}
+            {activeHorse && activeSession && (
+              <button
+                type="button"
+                data-testid="header-photo-drawer-btn"
+                onClick={() => {
+                  setIsAudioDrawerOpen(false);
+                  setIsPhotoDrawerOpen(true);
+                }}
+                title={lang === 'ru' ? 'Фото до / после' : 'Before / After Photos'}
+                aria-label={
+                  lang === 'ru'
+                    ? `Фото до / после (${sessionPhotos.length})`
+                    : `Before / After Photos (${sessionPhotos.length})`
+                }
+                className={`relative min-h-[34px] px-2.5 max-[359px]:px-1.5 py-1 rounded-lg border text-xs font-semibold inline-flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                  isPhotoDrawerOpen
+                    ? 'bg-[#2B4C3F] text-white border-[#2B4C3F]'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                }`}
+              >
+                <Camera className="w-3.5 h-3.5" />
+                {sessionPhotos.length > 0 && (
+                  <span
+                    data-testid="header-photo-count-badge"
+                    className="px-1.5 py-0.5 rounded-full bg-[#2B4C3F] text-white font-tabular text-[10px] font-bold leading-none"
+                  >
+                    {sessionPhotos.length}
                   </span>
                 )}
               </button>
@@ -789,6 +950,51 @@ export default function App() {
           </div>
         )}
       </header>
+
+      {/* SLIDE-UP BEFORE / AFTER PHOTOS DRAWER (available on both tabs) */}
+      {isPhotoDrawerOpen && activeSession && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/45 p-0 sm:p-4 no-print"
+          onClick={() => setIsPhotoDrawerOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          data-testid="photo-drawer"
+        >
+          <div
+            className="w-full max-w-xl max-h-[86vh] overflow-y-auto rounded-t-3xl sm:rounded-2xl bg-[#FAF9F6] border-t sm:border border-slate-300 px-4 pt-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:p-5 shadow-2xl space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-11 h-1.5 rounded-full bg-slate-300 mx-auto sm:hidden" />
+            <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-[#1E2421]">
+                  {lang === 'ru' ? 'Фото до / после' : 'Before / After Photos'}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  {lang === 'ru'
+                    ? `Сессия №${activeSession.sessionNumber} · сжимаются на устройстве и попадают в PDF`
+                    : `Session #${activeSession.sessionNumber} · compressed on-device, included in the PDF`}
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="close-photo-drawer-btn"
+                onClick={() => setIsPhotoDrawerOpen(false)}
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-slate-200/70 hover:bg-slate-200 text-slate-700 cursor-pointer shrink-0"
+                aria-label={lang === 'ru' ? 'Закрыть' : 'Close'}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <SessionPhotosPanel
+              photos={sessionPhotos}
+              lang={lang}
+              onAddPhotos={handleAddSessionPhotos}
+              onDeletePhoto={handleDeleteSessionPhoto}
+            />
+          </div>
+        </div>
+      )}
 
       {/* MAIN CONTENT STAGE */}
       <main className="flex-1 w-full max-w-[1400px] mx-auto px-3 md:px-8 py-4 md:py-6 pb-16">
@@ -1175,6 +1381,10 @@ export default function App() {
               setActiveTab('editor');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
+            sessionPhotos={sessionPhotos}
+            sessionPhotosSessionId={activeSessionKey}
+            onAddSessionPhotos={handleAddSessionPhotos}
+            onDeleteSessionPhoto={handleDeleteSessionPhoto}
             onUpdateReportSections={(nextSections: ReportSections, customized: boolean) =>
               void persistSessionUpdate(
                 {

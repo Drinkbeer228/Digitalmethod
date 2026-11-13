@@ -9,6 +9,7 @@ import {
   HorseProfile,
   InstalledWhisperModel,
   Language,
+  SessionPhoto,
   VoiceRecordingClip,
 } from '../types';
 import {
@@ -63,6 +64,7 @@ export class MastersonDatabase extends Dexie {
   whisperModels!: Table<InstalledWhisperModel, string>;
   modelFileBlobs!: Table<StoredModelBlobRow, string>;
   settings!: Table<AppSettingRow, string>;
+  sessionPhotos!: Table<SessionPhoto, string>;
 
   constructor() {
     super('MastersonCaseDigitalDB');
@@ -95,6 +97,19 @@ export class MastersonDatabase extends Dexie {
       whisperModels: 'id, active, installedAt',
       modelFileBlobs: 'key, modelId, fileName',
       settings: 'key',
+    });
+
+    // v4: Before / After session photos (additive table, no data migration)
+    this.version(4).stores({
+      horses: 'id, name, isDemo, updatedAt',
+      sessions: 'id, horseId, sessionNumber, date, isDemo, updatedAt',
+      voiceClips: 'id, sessionId, createdAt, recordingState',
+      audioChunks: 'id, recordingId, sequenceNumber',
+      recordingSessions: 'recordingId, sessionId, horseId, state, lastUpdatedAt',
+      whisperModels: 'id, active, installedAt',
+      modelFileBlobs: 'key, modelId, fileName',
+      settings: 'key',
+      sessionPhotos: 'id, sessionId, kind, createdAt',
     });
   }
 }
@@ -224,13 +239,30 @@ export async function ensureInitialSeed(): Promise<{
 }
 
 export async function deleteDemonstrationCase(): Promise<void> {
-  await db.transaction('rw', db.horses, db.sessions, db.voiceClips, db.settings, async () => {
+  await db.transaction(
+    'rw',
+    [db.horses, db.sessions, db.voiceClips, db.sessionPhotos, db.settings],
+    async () => {
+    const demoSessionIds = (
+      await db.sessions.where('horseId').equals(DEMO_HORSE_ID).primaryKeys()
+    ) as string[];
+    if (demoSessionIds.length > 0) {
+      await db.sessionPhotos.where('sessionId').anyOf(demoSessionIds).delete();
+    }
     await db.horses.delete(DEMO_HORSE_ID);
     await db.sessions.where('horseId').equals(DEMO_HORSE_ID).delete();
     await db.voiceClips.where('sessionId').equals(DEMO_SESSION_ID).delete();
     await db.voiceClips.delete(DEMO_CLIP_ID);
     await db.settings.put({ key: 'demoDeleted', value: 'true' });
-  });
+    }
+  );
+}
+
+/** Load Before / After photos of a session, oldest first. */
+export async function loadSessionPhotos(sessionId: string): Promise<SessionPhoto[]> {
+  if (!sessionId) return [];
+  const rows = await db.sessionPhotos.where('sessionId').equals(sessionId).toArray();
+  return rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
 export async function restoreDemonstrationCase(): Promise<{
