@@ -87,4 +87,4 @@ Horses, sessions, photos, recordings and the speech model are stored only in the
 
 ## Acknowledgements
 
-Parts of the on-device Whisper storage and inference code are adapted from *browser-whisper* by Tanpreet Singh Jolly (MIT License).
+Parts of the on-device Whisper storage and inference code are adapted from [browser-whisper](https://github.com/tanpreetjolly/browser-whisper) by [Tanpreet Singh Jolly](https://github.com/tanpreetjolly), used under the [MIT License](https://github.com/tanpreetjolly/browser-whisper/blob/main/LICENSE) (Copyright (c) 2026 Tanpreet Singh Jolly). Adapted parts: the OPFS model cache, the 16 kHz resampler and the transformers.js ONNX pipeline (see `src/whisper/localWhisperEngine.ts`).

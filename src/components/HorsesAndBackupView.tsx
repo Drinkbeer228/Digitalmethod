@@ -701,6 +701,29 @@ export const HorsesAndBackupView: React.FC<HorsesAndBackupViewProps> = ({
             >
               <div className="text-xs font-semibold text-[#1E2421]">{t.aboutTitle}</div>
               <p className="text-[11px] leading-relaxed text-slate-600">{t.methodDisclaimer}</p>
+              <p data-testid="about-credits" className="text-[11px] leading-relaxed text-slate-600">
+                {lang === 'ru'
+                  ? 'Открытый код: офлайн-распознавание речи использует адаптированный код '
+                  : 'Open source: offline speech recognition adapts code from '}
+                <a
+                  href="https://github.com/tanpreetjolly/browser-whisper"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-[#2B4C3F]"
+                >
+                  browser-whisper
+                </a>
+                {lang === 'ru' ? ' (автор ' : ' by '}
+                <a
+                  href="https://github.com/tanpreetjolly"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-[#2B4C3F]"
+                >
+                  Tanpreet Singh Jolly
+                </a>
+                {lang === 'ru' ? ', лицензия MIT).' : ' (MIT License).'}
+              </p>
             </div>
             {/* 1. Minimalist Offline Speech Model Control (3 States Only) */}
             <div
