@@ -10,6 +10,7 @@
 import { env, pipeline, Tensor } from '@huggingface/transformers';
 import { db } from '../db/database';
 import { InstalledWhisperModel, WhisperModelId } from '../types';
+import { assetUrl } from '../utils/assetUrl';
 
 export const GGML_UNSUPPORTED_ERROR =
   'This is a GGML model and cannot be loaded by the ONNX runtime. Please import a compatible ONNX model instead.';
@@ -645,7 +646,7 @@ export function configureOfflineTransformersCache(
   }) as typeof fetch;
 
   if (typeof window !== 'undefined' && env.backends?.onnx?.wasm) {
-    env.backends.onnx.wasm.wasmPaths = `${window.location.origin}/ort-wasm/`;
+    env.backends.onnx.wasm.wasmPaths = new URL(assetUrl('ort-wasm/'), window.location.origin).href;
   }
 
   env.customCache = {

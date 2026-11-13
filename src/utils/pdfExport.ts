@@ -20,6 +20,7 @@ import {
   SessionPhotoKind,
 } from '../types';
 import { buildReportFromSession, getUnifiedSessionNotes } from './reportGenerator';
+import { assetUrl } from './assetUrl';
 
 const A4_WIDTH = 595.28;
 const A4_HEIGHT = 841.89;
@@ -50,7 +51,8 @@ function hexToRgbTuple(hex: string): [number, number, number] {
 
 async function loadPublicBinaryAsset(publicPath: string): Promise<Uint8Array> {
   if (typeof window !== 'undefined' && typeof fetch === 'function') {
-    const res = await fetch(publicPath);
+    // Resolve against the deploy base path (e.g. /Digitalmethod/ on GitHub Pages)
+    const res = await fetch(assetUrl(publicPath));
     if (!res.ok) {
       throw new Error(`Failed to fetch asset ${publicPath}: ${res.status}`);
     }
@@ -151,7 +153,7 @@ async function renderBrowserDiagramCompositePng(
   }
 
   // 4. Base anatomical line-art PNG with multiply blend
-  const imgSrc = view === 'top' ? '/diagrams/horse-top.png' : '/diagrams/horse-left.png';
+  const imgSrc = assetUrl(view === 'top' ? 'diagrams/horse-top.png' : 'diagrams/horse-left.png');
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
