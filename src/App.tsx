@@ -44,6 +44,7 @@ import {
 import { compressImageFile } from './utils/imageCompression';
 import {
   BodyPartFilterId,
+  createEmptyAreaRow,
   createEmptyEvaluationTable,
   syncAnnotationsWithTable,
   TOP_VIEW_ANCHORS,
@@ -484,7 +485,7 @@ export default function App() {
   };
 
   /**
-   * Synchronize 19-Area Table Cell update -> Session Table + Standardized Vector Markers
+   * Synchronize Area Table Cell update -> Session Table + Standardized Vector Markers
    */
   const handleUpdateTableCell = (
     areaId: AnatomicalAreaId,
@@ -513,7 +514,7 @@ export default function App() {
     const nextTable: EvaluationTableState = {
       ...session.evaluationTable,
       [areaId]: {
-        ...session.evaluationTable[areaId],
+        ...(session.evaluationTable[areaId] ?? createEmptyAreaRow()),
         [side]: nextObs,
       },
     };
@@ -530,7 +531,7 @@ export default function App() {
   };
 
   /**
-   * Synchronize Diagram Annotation changes -> Undo Stack + 19-Area Table
+   * Synchronize Diagram Annotation changes -> Undo Stack + Area Table
    */
   const handleUpdateAnnotations = (
     nextAnnotations: DiagramAnnotation[],
@@ -1312,7 +1313,7 @@ export default function App() {
             </div>
 
             {isDesktop ? (
-              /* DESKTOP (>= 1024px): Left Profile | Filter + 19-Area Table | Right Profile, Top View below */
+              /* DESKTOP (>= 1024px): Left Profile | Filter + Area Table | Right Profile, Top View below */
               <div data-testid="desktop-three-column-evaluation" className="space-y-6">
                 <div className="grid grid-cols-12 gap-5 items-start">
                   <div className="col-span-4 rounded-xl border border-slate-300 bg-white p-2.5 shadow-2xs sticky top-24">

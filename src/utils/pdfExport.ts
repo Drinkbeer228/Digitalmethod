@@ -1167,8 +1167,10 @@ export async function generateSessionPdfBytes(
 
   cursorY = topBottomY - 14;
 
-  // 19-Area Index Reference Key at bottom of Page 1
-  const refBoxH = Math.max(72, cursorY - margin - 20);
+  // Anatomical Area Index Reference Key at bottom of Page 1
+  const keyCols = 4;
+  const keyRowsPerCol = Math.ceil(ANATOMICAL_AREAS.length / keyCols);
+  const refBoxH = Math.max(24 + keyRowsPerCol * 10.5 + 4, cursorY - margin - 20);
   page1.drawRectangle({
     x: margin,
     y: cursorY - refBoxH,
@@ -1181,8 +1183,8 @@ export async function generateSessionPdfBytes(
 
   page1.drawText(
     lang === 'ru'
-      ? 'Индекс анатомических зон (1–19):'
-      : 'Anatomical Landmarks Key (1–19):',
+      ? `Индекс анатомических зон (1–${ANATOMICAL_AREAS.length}):`
+      : `Anatomical Landmarks Key (1–${ANATOMICAL_AREAS.length}):`,
     {
       x: margin + 8,
       y: cursorY - 12,
@@ -1192,11 +1194,10 @@ export async function generateSessionPdfBytes(
     }
   );
 
-  const keyCols = 4;
   const keyColW = (contentW - 16) / keyCols;
   ANATOMICAL_AREAS.forEach((area, i) => {
-    const c = Math.floor(i / 5);
-    const r = i % 5;
+    const c = Math.floor(i / keyRowsPerCol);
+    const r = i % keyRowsPerCol;
     const kx = margin + 8 + c * keyColW;
     const ky = cursorY - 24 - r * 10.5;
     const areaTitle = lang === 'ru' ? area.nameRu : area.nameEn;

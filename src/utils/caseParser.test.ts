@@ -52,6 +52,26 @@ test('recognizes Russian anatomical areas, sides, reactions, and release signs',
   assert.ok(gluteSug.releaseSigns?.includes('Deep yawning'));
 });
 
+test('recognizes hip point (tuber coxae) and under-the-tail (tuber ischii) without stealing hamstrings', () => {
+  const ru = parsePractitionerNotes('Маклок слева реакция 2. Под хвостом справа рестрикция.');
+  const hip = ru.find((s) => s.type === 'area_observation' && s.areaId === 'tuber_coxae');
+  assert.ok(hip, 'Should identify маклок');
+  assert.equal(hip.side, 'left');
+  assert.equal(hip.reactionLevel, 2);
+  const tail = ru.find((s) => s.type === 'area_observation' && s.areaId === 'under_tail');
+  assert.ok(tail, 'Should identify под хвостом');
+  assert.equal(tail.side, 'right');
+  assert.equal(tail.restriction, true);
+
+  const en = parsePractitionerNotes('Left point of hip showed Level 1 reaction. Right tuber ischii restriction.');
+  assert.ok(en.some((s) => s.type === 'area_observation' && s.areaId === 'tuber_coxae'));
+  assert.ok(en.some((s) => s.type === 'area_observation' && s.areaId === 'under_tail'));
+
+  const ham = parsePractitionerNotes('Правые седалищные мышцы реакция 2.');
+  const hamAreas = ham.filter((s) => s.type === 'area_observation').map((s) => s.areaId);
+  assert.deepEqual(hamAreas, ['hamstrings']);
+});
+
 test('only suggests Predominant Diagonal when explicitly stated and preserves unclassified notes', () => {
   const input =
     'Started with Bladder Meridian scan. Predominant diagonal is from Left Atlas to Right Gluteal.';
@@ -80,9 +100,9 @@ test('builds structured bilingual report from Yannis demonstration session', () 
   assert.match(ruReport.predominantDiagonal, /Левый атлант \(Left Atlas\) → Правая ягодичная \(Right Gluteal\)/);
 });
 
-test('maps all 19 anatomical areas into 5 pastel regions and synchronizes multiple markers per location', () => {
+test('maps all 21 anatomical areas into 5 pastel regions and synchronizes multiple markers per location', () => {
   assert.equal(ANATOMICAL_REGIONS.length, 5, 'Should define exactly 5 pastel anatomical regions');
-  assert.equal(ANATOMICAL_AREAS.length, 19, 'Should define all 19 Masterson anatomical areas');
+  assert.equal(ANATOMICAL_AREAS.length, 21, 'Should define all 21 Masterson anatomical areas');
 
   const validRegionIds = new Set(ANATOMICAL_REGIONS.map((r) => r.id));
   for (const area of ANATOMICAL_AREAS) {

@@ -17,7 +17,7 @@ export function getUnifiedSessionNotes(session: BodyworkSession): string {
 
 /**
  * Generates a structured 6-section session report from the practitioner's confirmed
- * 19-area evaluation table, diagram annotations, and session notes in English or Russian.
+ * area evaluation table, diagram annotations, and session notes in English or Russian.
  */
 export function buildReportFromSession(
   session: BodyworkSession,
@@ -129,14 +129,14 @@ export function buildReportFromSession(
       ? reactionsList.join('\n')
       : lang === 'ru'
         ? 'При первичной пальпации выраженных реакций (уровни 1–3) в таблице не отмечено.'
-        : 'No palpation reactions (Levels 1–3) currently marked in the 19-area evaluation table.';
+        : 'No palpation reactions (Levels 1–3) currently marked in the evaluation table.';
 
   const restrictionsIdentified =
     restrictionsList.length > 0
       ? restrictionsList.join('\n')
       : lang === 'ru'
         ? 'Зоны рестрикций (более старых закрепощений) в таблице не отмечены.'
-        : 'No areas of restriction (older issues) currently marked in the 19-area evaluation table.';
+        : 'No areas of restriction (older issues) currently marked in the evaluation table.';
 
   const signsArr = Array.from(releaseSignsSet);
   const resistanceArr = Array.from(resistanceSignsSet);

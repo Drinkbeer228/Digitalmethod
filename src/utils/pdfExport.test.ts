@@ -123,16 +123,16 @@ function makeTestFixtures(): { horse: HorseProfile; session: BodyworkSession } {
 }
 
 describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF Export', () => {
-  it('partitions all 19 anatomical areas into 5 body-part filters (All: 19, Head: 4, Torso: 8, Front: 4, Hind: 3)', () => {
+  it('partitions all 21 anatomical areas into 5 body-part filters (All: 21, Head: 4, Torso: 9, Front: 4, Hind: 4)', () => {
     assert.equal(BODY_PART_FILTERS.length, 5);
     assert.deepEqual(
       BODY_PART_FILTERS.map((f) => ({ id: f.id, count: f.areaIds.length })),
       [
-        { id: 'all', count: 19 },
+        { id: 'all', count: 21 },
         { id: 'head', count: 4 },
-        { id: 'torso', count: 8 },
+        { id: 'torso', count: 9 },
         { id: 'front', count: 4 },
-        { id: 'hind', count: 3 },
+        { id: 'hind', count: 4 },
       ]
     );
     assert.equal(matchesBodyPartFilter('poll_front_atlas', 'head'), true);
@@ -145,25 +145,30 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
     assert.equal(matchesBodyPartFilter('hamstrings', 'hind'), true);
     assert.equal(matchesBodyPartFilter('hind_fetlock', 'hind'), true);
     assert.equal(matchesBodyPartFilter('hind_fetlock', 'all'), true);
+    assert.equal(matchesBodyPartFilter('tuber_coxae', 'torso'), true);
+    assert.equal(matchesBodyPartFilter('under_tail', 'hind'), true);
+    assert.equal(matchesBodyPartFilter('under_tail', 'torso'), false);
   });
 
-  it('partitions all 19 anatomical areas into 3 interactive body segments (Head & Neck: 4, Torso & Pelvis: 8, Limbs & Hooves: 7)', () => {
+  it('partitions all 21 anatomical areas into 3 interactive body segments (Head & Neck: 4, Torso & Pelvis: 9, Limbs & Hooves: 8)', () => {
     assert.equal(BODY_SEGMENTS.length, 3);
     assert.deepEqual(
       BODY_SEGMENTS.map((s) => ({ id: s.id, count: s.areaIds.length })),
       [
         { id: 'head_neck', count: 4 },
-        { id: 'torso_pelvis', count: 8 },
-        { id: 'limbs', count: 7 },
+        { id: 'torso_pelvis', count: 9 },
+        { id: 'limbs', count: 8 },
       ]
     );
     const allGroupedIds = BODY_SEGMENTS.flatMap((s) => s.areaIds);
-    assert.equal(allGroupedIds.length, 19);
-    assert.equal(new Set(allGroupedIds).size, 19);
+    assert.equal(allGroupedIds.length, 21);
+    assert.equal(new Set(allGroupedIds).size, 21);
     assert.equal(getBodySegmentForArea('poll_front_atlas'), 'head_neck');
     assert.equal(getBodySegmentForArea('saddle_outline'), 'torso_pelvis');
     assert.equal(getBodySegmentForArea('hoof_point'), 'limbs');
     assert.equal(getBodySegmentForArea('hind_fetlock'), 'limbs');
+    assert.equal(getBodySegmentForArea('tuber_coxae'), 'torso_pelvis');
+    assert.equal(getBodySegmentForArea('under_tail'), 'limbs');
   });
 
   it('defines all 8 quick release chips, 6 additional release signs, 5 resistance signs, and 12 Masterson techniques', () => {
@@ -376,6 +381,46 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
         assert.ok(!text.includes(emoji), `emoji ${emoji} must be stripped`);
       }
       assert.ok(!text.includes('\uFFFD'));
+    }
+  });
+
+  it('keeps zone indices 1–21 stable and handles sessions saved before #20/#21 existed', async () => {
+    assert.deepEqual(
+      ANATOMICAL_AREAS.map((a) => a.index),
+      Array.from({ length: 21 }, (_, i) => i + 1)
+    );
+    assert.equal(ANATOMICAL_AREAS[19].id, 'tuber_coxae');
+    assert.equal(ANATOMICAL_AREAS[20].id, 'under_tail');
+
+    // Old session: evaluation table has no rows for the new zones
+    const { horse, session } = makeTestFixtures();
+    const legacyTable = { ...session.evaluationTable } as Partial<BodyworkSession['evaluationTable']>;
+    delete legacyTable.tuber_coxae;
+    delete legacyTable.under_tail;
+    const legacy = {
+      ...session,
+      evaluationTable: legacyTable as BodyworkSession['evaluationTable'],
+    };
+    assert.doesNotThrow(() => buildReportFromSession(legacy, 'en'));
+    const bytes = await generateSessionPdfBytes(horse, legacy, 'en');
+    assert.equal((await PDFDocument.load(bytes)).getPageCount(), 2);
+
+    // New zones marked → appear in the PDF table and landmark key
+    session.evaluationTable.tuber_coxae.left = {
+      ...session.evaluationTable.tuber_coxae.left,
+      reaction: 2,
+    };
+    session.evaluationTable.under_tail.right = {
+      ...session.evaluationTable.under_tail.right,
+      restriction: true,
+    };
+    const marked = await generateSessionPdfBytes(horse, session, 'en');
+    assert.equal((await PDFDocument.load(marked)).getPageCount(), 2);
+    const text = extractPdfText(marked);
+    if (text !== null) {
+      assert.ok(text.includes('Anatomical Landmarks Key (1–21)'));
+      assert.ok(text.includes('20. Hip Point (Tuber Coxae)'));
+      assert.ok(text.includes('21. Under-the-Tail (Tuber Ischii)'));
     }
   });
 

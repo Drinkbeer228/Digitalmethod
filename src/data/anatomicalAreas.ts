@@ -1,6 +1,7 @@
 import {
   AnatomicalAreaId,
   AnatomicalRegionId,
+  AreaEvaluationRow,
   DiagramAnnotation,
   EvaluationTableState,
   Point,
@@ -242,6 +243,8 @@ export const BODY_PART_FILTERS: BodyPartFilterMeta[] = [
       'front_fetlock',
       'hock',
       'hind_fetlock',
+      'tuber_coxae',
+      'under_tail',
     ],
   },
   {
@@ -263,6 +266,7 @@ export const BODY_PART_FILTERS: BodyPartFilterMeta[] = [
       'lumbar',
       'gluteals',
       'sacrum',
+      'tuber_coxae',
     ],
   },
   {
@@ -275,7 +279,7 @@ export const BODY_PART_FILTERS: BodyPartFilterMeta[] = [
     id: 'hind',
     labelEn: 'Hind',
     labelRu: 'Зад',
-    areaIds: ['hamstrings', 'hock', 'hind_fetlock'],
+    areaIds: ['hamstrings', 'hock', 'hind_fetlock', 'under_tail'],
   },
 ];
 
@@ -347,6 +351,7 @@ export const BODY_SEGMENTS: BodySegmentMeta[] = [
       'lumbar',
       'gluteals',
       'sacrum',
+      'tuber_coxae',
     ],
     pastelFill: '#BFDBFE',
     pastelStroke: '#2563EB',
@@ -385,6 +390,7 @@ export const BODY_SEGMENTS: BodySegmentMeta[] = [
       'front_fetlock',
       'hock',
       'hind_fetlock',
+      'under_tail',
     ],
     pastelFill: '#D9F99D',
     pastelStroke: '#65A30D',
@@ -401,7 +407,7 @@ export const BODY_SEGMENTS: BodySegmentMeta[] = [
         { x: 0.358, y: 0.845 },
         { x: 0.358, y: 0.68 },
       ],
-      // Caudal Hamstrings + Hindlimbs (#14, #18, #19)
+      // Caudal Hamstrings, Under-the-Tail + Hindlimbs (#14, #18, #19, #21)
       [
         { x: 0.795, y: 0.38 },
         { x: 0.882, y: 0.385 },
@@ -867,31 +873,79 @@ export const ANATOMICAL_AREAS: AnatomicalAreaMeta[] = [
     synonymsEn: ['hind fetlock', 'rear fetlock', 'fetlock hind'],
     synonymsRu: ['задний путовый', 'путовый сустав зада', 'путо зада'],
   },
+  // #20–#21 were added later; indices are stable (never renumber stored zones)
+  {
+    id: 'tuber_coxae',
+    index: 20,
+    regionId: 'pelvis_hindquarters',
+    landmarkKind: 'point',
+    nameEn: 'Hip Point (Tuber Coxae)',
+    nameRu: 'Маклок (тазовая точка)',
+    explanationEn:
+      'Tuber coxae: anchor of the lateral and spiral lines (oblique abdominals, tensor fasciae latae); Masterson pelvic release point linked to stifle and groin tension.',
+    explanationRu:
+      'Маклок (tuber coxae): якорь латеральной и спиральной линий (косые мышцы живота, напрягатель широкой фасции); точка релиза таза по Мастерсону, связана с зажатостью колена и паха.',
+    leftCoord: { x: 0.708, y: 0.318 },
+    reactionLine: { halfLen: 0.022, angleDeg: 30 },
+    defaultRadius: { rx: 0.024, ry: 0.022, rotation: 0 },
+    hitRadius: 0.034,
+    synonymsEn: ['tuber coxae', 'hip point', 'point of hip', 'point of the hip', 'pelvic point'],
+    synonymsRu: ['маклок', 'маклока', 'маклоке', 'маклоком', 'тазовая точка', 'подвздошный бугор'],
+  },
+  {
+    id: 'under_tail',
+    index: 21,
+    regionId: 'pelvis_hindquarters',
+    landmarkKind: 'point',
+    nameEn: 'Under-the-Tail (Tuber Ischii)',
+    nameRu: 'Под хвостом (седалищный бугор)',
+    explanationEn:
+      'Tuber ischii / point of buttock: sacrotuberous ligament and hamstring origins (superficial dorsal line); Masterson starting point for releasing the hind end.',
+    explanationRu:
+      'Седалищный бугор (tuber ischii): крестцово-седалищная связка и начало мышц задней поверхности бедра (поверхностная дорсальная линия); стартовая точка расслабления зада по Мастерсону.',
+    leftCoord: { x: 0.865, y: 0.368 },
+    reactionLine: { halfLen: 0.022, angleDeg: 90 },
+    defaultRadius: { rx: 0.022, ry: 0.024, rotation: 0 },
+    hitRadius: 0.03,
+    synonymsEn: [
+      'under the tail',
+      'under-the-tail',
+      'under tail',
+      'under-tail',
+      'tuber ischii',
+      'point of buttock',
+      'point of the buttock',
+      'ischial tuberosity',
+    ],
+    synonymsRu: [
+      'под хвостом',
+      'седалищный бугор',
+      'седалищного бугра',
+      'седалищном бугре',
+      'подхвостовая',
+      'подхвостовой',
+    ],
+  },
 ];
+
+/** An evaluation row with nothing marked on either side. */
+export function createEmptyAreaRow(): AreaEvaluationRow {
+  const emptySide = () => ({
+    reaction: null,
+    restriction: false,
+    released: false,
+    releaseSigns: [],
+    resistanceSigns: [],
+    techniques: [],
+    note: '',
+  });
+  return { left: emptySide(), right: emptySide() };
+}
 
 export function createEmptyEvaluationTable(): EvaluationTableState {
   const table = {} as EvaluationTableState;
   for (const area of ANATOMICAL_AREAS) {
-    table[area.id] = {
-      left: {
-        reaction: null,
-        restriction: false,
-        released: false,
-        releaseSigns: [],
-        resistanceSigns: [],
-        techniques: [],
-        note: '',
-      },
-      right: {
-        reaction: null,
-        restriction: false,
-        released: false,
-        releaseSigns: [],
-        resistanceSigns: [],
-        techniques: [],
-        note: '',
-      },
-    };
+    table[area.id] = createEmptyAreaRow();
   }
   return table;
 }
@@ -930,7 +984,7 @@ export function getAreaReactionEndpoints(
 
 /**
  * Rebuild standardized left/right vector annotations deterministically from the
- * 19-Area Evaluation Table (single source of truth), while preserving Top View
+ * Area Evaluation Table (single source of truth), while preserving Top View
  * diagonal annotations.
  */
 export function syncAnnotationsWithTable(
