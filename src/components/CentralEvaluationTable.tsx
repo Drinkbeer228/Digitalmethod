@@ -15,7 +15,8 @@ import {
 } from '../data/anatomicalAreas';
 import { TRANSLATIONS } from '../data/translations';
 import { UpdateCellFn, ZoneEditorSheet } from './ZoneEditorSheet';
-import { Check, Info, MessageSquareText, X } from 'lucide-react';
+import { Check, Info, MessageSquareText } from 'lucide-react';
+import { ZoneInfoSheet } from './ZoneInfoSheet';
 
 interface CentralEvaluationTableProps {
   tableState: EvaluationTableState;
@@ -227,8 +228,6 @@ export const CentralEvaluationTable: React.FC<CentralEvaluationTableProps> = ({
     else setInternalPopover(next);
   };
 
-  const infoMeta = infoAreaId ? ANATOMICAL_AREAS.find((a) => a.id === infoAreaId) : null;
-
   const filteredAreas = ANATOMICAL_AREAS.filter((area) =>
     matchesBodyPartFilter(area.id, bodyPartFilter)
   );
@@ -402,9 +401,13 @@ export const CentralEvaluationTable: React.FC<CentralEvaluationTableProps> = ({
                         {!readOnly && (
                           <button
                             type="button"
-                            onClick={() =>
-                              setInfoAreaId(infoAreaId === area.id ? null : area.id)
-                            }
+                            data-testid={`table-info-${area.id}`}
+                            aria-haspopup="dialog"
+                            aria-expanded={infoAreaId === area.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setInfoAreaId(area.id);
+                            }}
                             aria-label={`Explanation for ${area.nameEn}`}
                             className="p-1 text-slate-400 hover:text-[#2B4C3F] rounded shrink-0 cursor-pointer"
                           >
@@ -446,28 +449,18 @@ export const CentralEvaluationTable: React.FC<CentralEvaluationTableProps> = ({
         </div>
       )}
 
-      {/* Anatomical Explanation Callout if opened */}
-      {infoMeta && !readOnly && (
-        <div className="mt-2 p-3 rounded-lg bg-[#F3F1EC] border border-slate-300 text-xs text-slate-700 flex items-start justify-between gap-2">
-          <div>
-            <div className="font-semibold text-[#2B4C3F]">
-              {infoMeta.index}. {lang === 'ru' ? infoMeta.nameRu : infoMeta.nameEn}
-            </div>
-            <p className="mt-0.5 text-slate-600 leading-relaxed">
-              {lang === 'ru' ? infoMeta.explanationRu : infoMeta.explanationEn}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setInfoAreaId(null)}
-            className="p-1 text-slate-400 hover:text-slate-700"
-            aria-label="Close explanation"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
       </div>
+
+      {/* Zone information (ⓘ next to a zone name): opens as its own sheet, so it is
+          visible wherever the row is — not appended below the 21-row table */}
+      {infoAreaId && !readOnly && !editingCell && (
+        <ZoneInfoSheet
+          areaId={infoAreaId}
+          tableState={tableState}
+          lang={lang}
+          onClose={() => setInfoAreaId(null)}
+        />
+      )}
 
       {/* Zone editor: half-height bottom sheet on mobile, centered card on wider screens */}
       {editingCell && !readOnly && (
