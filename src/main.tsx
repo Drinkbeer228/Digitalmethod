@@ -1,25 +1,27 @@
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { APP_BASE_URL, assetUrl } from './utils/assetUrl';
 
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   const initOfflineSW = async () => {
     try {
-      const reg = await navigator.serviceWorker.register('/offline-sw.js', { scope: '/' });
+      // Scope = deploy base ("/" locally, "/Digitalmethod/" on GitHub Pages)
+      const reg = await navigator.serviceWorker.register(assetUrl('offline-sw.js'), {
+        scope: APP_BASE_URL,
+      });
       await navigator.serviceWorker.ready;
+      const appRoot = new URL(APP_BASE_URL, window.location.origin).href;
       const collectLoadedUrls = () => {
         const entries = performance
           .getEntriesByType('resource')
           .map((r) => r.name)
-          .filter((u) => u.startsWith(window.location.origin));
+          .filter((u) => u.startsWith(appRoot));
+        const devEntries = import.meta.env.DEV
+          ? [appRoot + 'src/main.tsx', appRoot + '@vite/client']
+          : [];
         return Array.from(
-          new Set([
-            window.location.origin + '/',
-            window.location.origin + '/index.html',
-            window.location.origin + '/src/main.tsx',
-            window.location.origin + '/@vite/client',
-            ...entries,
-          ])
+          new Set([appRoot, appRoot + 'index.html', ...devEntries, ...entries])
         );
       };
       const sendWarm = () => {

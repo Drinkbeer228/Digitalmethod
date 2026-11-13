@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { assetUrl } from '../utils/assetUrl';
 import {
   AnatomicalAreaId,
   AnatomicalRegionId,
@@ -366,7 +367,7 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
         {/* LAYER 3: Authoritative Anatomical Horse Line-Art Image (Multiply Blend Over Pastel Zones) */}
         {view === 'left' && (
           <image
-            href="/diagrams/horse-left.png"
+            href={assetUrl('diagrams/horse-left.png')}
             x={0}
             y={0}
             width={width}
@@ -382,7 +383,7 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
             className="pointer-events-none"
           >
             <image
-              href="/diagrams/horse-left.png"
+              href={assetUrl('diagrams/horse-left.png')}
               x={0}
               y={0}
               width={width}
@@ -394,7 +395,7 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
         )}
         {view === 'top' && (
           <image
-            href="/diagrams/horse-top.png"
+            href={assetUrl('diagrams/horse-top.png')}
             x={0}
             y={0}
             width={width}

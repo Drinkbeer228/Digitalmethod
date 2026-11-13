@@ -5,15 +5,20 @@ import path from 'path';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// Deploy base path: "/" locally, "/Digitalmethod/" on GitHub Pages (set by the Pages workflow)
+const rawBase = process.env.VITE_BASE_PATH || '/';
+const base = `/${rawBase.replace(/^\/+|\/+$/g, '')}/`.replace(/^\/\/$/, '/');
+
 export default defineConfig(() => {
   return {
+    base,
     plugins: [
       {
         name: 'serve-local-ort-wasm',
         configureServer(server) {
           server.middlewares.use((req, res, next) => {
             const reqUrl = req.url?.split('?')[0] ?? '';
-            if (reqUrl.startsWith('/ort-wasm/')) {
+            if (reqUrl.startsWith(`${base}ort-wasm/`)) {
               const fileName = path.basename(reqUrl);
               const filePath = path.resolve(__dirname, 'public/ort-wasm', fileName);
               if (fs.existsSync(filePath)) {
@@ -46,7 +51,7 @@ export default defineConfig(() => {
           'pwa-maskable-512x512.png',
         ],
         manifest: {
-          id: '/',
+          id: './',
           name: 'Masterson Case Digital',
           short_name: 'Masterson',
           description:
@@ -54,23 +59,23 @@ export default defineConfig(() => {
           theme_color: '#2B4C3F',
           background_color: '#FAF9F6',
           display: 'standalone',
-          start_url: '/',
-          scope: '/',
+          start_url: './',
+          scope: './',
           icons: [
             {
-              src: '/pwa-192x192.png',
+              src: 'pwa-192x192.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-512x512.png',
+              src: 'pwa-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-maskable-512x512.png',
+              src: 'pwa-maskable-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable',

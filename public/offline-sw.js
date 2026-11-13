@@ -1,25 +1,32 @@
-const CACHE_NAME = 'masterson-case-digital-offline-v8';
+const CACHE_NAME = 'masterson-case-digital-offline-v9';
 
-const CORE_PRECACHE_URLS = [
-  '/',
-  '/index.html',
-  '/icon.svg',
-  '/manifest.webmanifest',
-  '/diagrams/horse-left.png',
-  '/diagrams/horse-top.png',
-  '/fonts/DejaVuSans.ttf',
-  '/fonts/DejaVuSans-Bold.ttf',
-  '/ort-wasm/ort-wasm-simd-threaded.wasm',
-  '/ort-wasm/ort-wasm-simd-threaded.mjs',
-  '/ort-wasm/ort-wasm-simd-threaded.jsep.wasm',
-  '/ort-wasm/ort-wasm-simd-threaded.jsep.mjs',
+// Paths are relative to the service worker scope, so the app works both at "/"
+// (local dev) and under a sub-path such as "/Digitalmethod/" (GitHub Pages).
+const CORE_PRECACHE_PATHS = [
+  './',
+  'index.html',
+  'icon.svg',
+  'manifest.webmanifest',
+  'diagrams/horse-left.png',
+  'diagrams/horse-top.png',
+  'fonts/DejaVuSans.ttf',
+  'fonts/DejaVuSans-Bold.ttf',
+  'ort-wasm/ort-wasm-simd-threaded.wasm',
+  'ort-wasm/ort-wasm-simd-threaded.mjs',
+  'ort-wasm/ort-wasm-simd-threaded.jsep.wasm',
+  'ort-wasm/ort-wasm-simd-threaded.jsep.mjs',
 ];
+
+function scopeUrl(relativePath) {
+  return new URL(relativePath, self.registration.scope).href;
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(CORE_PRECACHE_URLS).catch(() => {});
-    })
+    caches.open(CACHE_NAME).then((cache) =>
+      // Cache each file independently: one missing file must not drop the whole precache
+      Promise.allSettled(CORE_PRECACHE_PATHS.map((p) => cache.add(scopeUrl(p))))
+    )
   );
   self.skipWaiting();
 });
@@ -118,8 +125,8 @@ self.addEventListener('fetch', (event) => {
           (await cache.match(url.pathname, { ignoreVary: true })) ||
           (await cache.match(url.pathname, { ignoreSearch: true, ignoreVary: true })) ||
           (request.mode === 'navigate'
-            ? (await cache.match('/', { ignoreVary: true })) ||
-              (await cache.match('/index.html', { ignoreVary: true }))
+            ? (await cache.match(scopeUrl('./'), { ignoreVary: true })) ||
+              (await cache.match(scopeUrl('index.html'), { ignoreVary: true }))
             : undefined);
         if (cachedResponse) {
           return cachedResponse;
