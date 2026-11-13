@@ -208,6 +208,144 @@ export const ANATOMICAL_REGIONS: AnatomicalRegionMeta[] = [
   },
 ];
 
+export type BodySegmentId = 'head_neck' | 'torso_pelvis' | 'limbs';
+
+export interface BodySegmentMeta {
+  id: BodySegmentId;
+  nameEn: string;
+  shortLabelEn: string;
+  nameRu: string;
+  shortLabelRu: string;
+  areaIds: AnatomicalAreaId[];
+  pastelFill: string;
+  pastelStroke: string;
+  activeFill: string;
+  activeStroke: string;
+  leftPolygons: Point[][];
+}
+
+export const BODY_SEGMENTS: BodySegmentMeta[] = [
+  {
+    id: 'head_neck',
+    nameEn: 'Head & Neck',
+    shortLabelEn: 'Head & Neck',
+    nameRu: 'Голова и шея',
+    shortLabelRu: 'Голова и шея',
+    areaIds: ['poll_front_atlas', 'poll_top_atlas', 'tmj', 'neck'],
+    pastelFill: '#F2E8D5',
+    pastelStroke: '#CBB894',
+    activeFill: '#DCECE2',
+    activeStroke: '#2B4C3F',
+    leftPolygons: [
+      [
+        { x: 0.048, y: 0.265 },
+        { x: 0.095, y: 0.165 },
+        { x: 0.135, y: 0.04 },
+        { x: 0.195, y: 0.075 },
+        { x: 0.285, y: 0.118 },
+        { x: 0.365, y: 0.185 },
+        { x: 0.335, y: 0.345 },
+        { x: 0.255, y: 0.312 },
+        { x: 0.195, y: 0.245 },
+        { x: 0.104, y: 0.312 },
+        { x: 0.055, y: 0.305 },
+      ],
+    ],
+  },
+  {
+    id: 'torso_pelvis',
+    nameEn: 'Torso & Pelvis',
+    shortLabelEn: 'Torso & Pelvis',
+    nameRu: 'Корпус и таз',
+    shortLabelRu: 'Корпус и таз',
+    areaIds: [
+      'shoulder',
+      'withers',
+      'top_of_spine',
+      'saddle_outline',
+      'ribs',
+      'lumbar',
+      'gluteals',
+      'sacrum',
+    ],
+    pastelFill: '#DEE8F2',
+    pastelStroke: '#9EB6CE',
+    activeFill: '#C8DAEC',
+    activeStroke: '#2B4C3F',
+    leftPolygons: [
+      [
+        { x: 0.365, y: 0.185 },
+        { x: 0.435, y: 0.235 },
+        { x: 0.545, y: 0.285 },
+        { x: 0.692, y: 0.262 },
+        { x: 0.812, y: 0.272 },
+        { x: 0.865, y: 0.315 },
+        { x: 0.805, y: 0.395 },
+        { x: 0.725, y: 0.512 },
+        { x: 0.615, y: 0.538 },
+        { x: 0.525, y: 0.556 },
+        { x: 0.428, y: 0.548 },
+        { x: 0.335, y: 0.515 },
+        { x: 0.312, y: 0.435 },
+        { x: 0.335, y: 0.345 },
+      ],
+    ],
+  },
+  {
+    id: 'limbs',
+    nameEn: 'Limbs & Hooves',
+    shortLabelEn: 'Limbs',
+    nameRu: 'Конечности и копыта',
+    shortLabelRu: 'Конечности',
+    areaIds: [
+      'hoof_point',
+      'hamstrings',
+      'front_splints',
+      'knee',
+      'front_fetlock',
+      'hock',
+      'hind_fetlock',
+    ],
+    pastelFill: '#EAE5DC',
+    pastelStroke: '#BEB5A4',
+    activeFill: '#DFD7C8',
+    activeStroke: '#2B4C3F',
+    leftPolygons: [
+      // Forelimbs + Hoof Point (#7, #15, #16, #17)
+      [
+        { x: 0.335, y: 0.52 },
+        { x: 0.445, y: 0.552 },
+        { x: 0.468, y: 0.845 },
+        { x: 0.455, y: 0.925 },
+        { x: 0.325, y: 0.94 },
+        { x: 0.358, y: 0.845 },
+        { x: 0.358, y: 0.68 },
+      ],
+      // Caudal Hamstrings + Hindlimbs (#14, #18, #19)
+      [
+        { x: 0.795, y: 0.38 },
+        { x: 0.882, y: 0.385 },
+        { x: 0.898, y: 0.665 },
+        { x: 0.908, y: 0.865 },
+        { x: 0.89, y: 0.945 },
+        { x: 0.73, y: 0.922 },
+        { x: 0.785, y: 0.835 },
+        { x: 0.785, y: 0.665 },
+        { x: 0.735, y: 0.515 },
+      ],
+    ],
+  },
+];
+
+export function getBodySegmentForArea(areaId: AnatomicalAreaId): BodySegmentId {
+  for (const seg of BODY_SEGMENTS) {
+    if (seg.areaIds.includes(areaId)) {
+      return seg.id;
+    }
+  }
+  return 'torso_pelvis';
+}
+
 export interface AnatomicalAreaMeta {
   id: AnatomicalAreaId;
   index: number;

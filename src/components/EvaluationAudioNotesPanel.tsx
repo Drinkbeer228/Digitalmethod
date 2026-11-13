@@ -18,10 +18,8 @@ import { db, StoredAudioChunkRow } from '../db/database';
 import {
   Check,
   Cpu,
-  FileDown,
   FilePlus2,
   FolderUp,
-  Headphones,
   Mic,
   Pause,
   Play,
@@ -41,8 +39,8 @@ interface EvaluationAudioNotesPanelProps {
   onApplySuggestion: (suggestion: ProposedCaseSuggestion) => void;
   installedModels: InstalledWhisperModel[];
   onNavigateToHorses?: () => void;
-  onQuickExportPdf?: () => void;
-  isExportingPdf?: boolean;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
 const getSupportedMimeType = (): string => {
@@ -100,8 +98,8 @@ export const EvaluationAudioNotesPanel: React.FC<EvaluationAudioNotesPanelProps>
   onApplySuggestion,
   installedModels,
   onNavigateToHorses,
-  onQuickExportPdf,
-  isExportingPdf = false,
+  isOpen: controlledOpen,
+  onClose,
 }) => {
   const t = TRANSLATIONS[lang];
 
@@ -110,7 +108,16 @@ export const EvaluationAudioNotesPanel: React.FC<EvaluationAudioNotesPanelProps>
   const [recSeconds, setRecSeconds] = useState(0);
   const [recError, setRecError] = useState<string | null>(null);
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
-  const [isAudioDrawerOpen, setIsAudioDrawerOpen] = useState(false);
+  const [internalDrawerOpen, setInternalDrawerOpen] = useState(false);
+
+  const isAudioDrawerOpen =
+    controlledOpen !== undefined ? controlledOpen : internalDrawerOpen;
+  const setIsAudioDrawerOpen = (next: boolean) => {
+    setInternalDrawerOpen(next);
+    if (!next && onClose) {
+      onClose();
+    }
+  };
   const [interruptedRecordings, setInterruptedRecordings] = useState<
     {
       recordingId: string;
@@ -740,11 +747,11 @@ export const EvaluationAudioNotesPanel: React.FC<EvaluationAudioNotesPanelProps>
     <>
       {/* TOP BANNERS: ONLY RENDERED WHEN INTERRUPTED RECORDING OR STORAGE/REC ERROR EXISTS */}
       {(storageWarning || interruptedRecordings.length > 0 || recError) && (
-        <div className="space-y-3 mb-4">
+        <div className="space-y-1.5 shrink-0">
           {storageWarning && (
             <div
               data-testid="storage-warning-banner"
-              className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900"
+              className="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-300 text-xs text-amber-900"
             >
               {storageWarning}
             </div>
@@ -753,7 +760,7 @@ export const EvaluationAudioNotesPanel: React.FC<EvaluationAudioNotesPanelProps>
           {interruptedRecordings.length > 0 && (
             <div
               data-testid="interrupted-recording-banner"
-              className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 space-y-2.5 shadow-xs"
+              className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-300 space-y-1.5 shadow-2xs"
             >
               <div className="text-xs font-bold text-amber-950">
                 {lang === 'ru'
@@ -1153,93 +1160,6 @@ export const EvaluationAudioNotesPanel: React.FC<EvaluationAudioNotesPanelProps>
           </div>
         </div>
       )}
-
-      {/* STICKY BOTTOM THUMB BAR (Record/Stop + Clips (N) + Export PDF) */}
-      <div
-        data-testid="sticky-bottom-thumb-bar"
-        className="no-print fixed bottom-0 left-0 right-0 z-40 bg-[#FAF9F6]/95 backdrop-blur-md border-t border-slate-300 px-3 py-2 shadow-lg"
-        style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
-      >
-        <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-2">
-          {/* 1. Record / Stop Button with Live Timer */}
-          <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
-            {recState === 'idle' ? (
-              <button
-                type="button"
-                data-testid="thumb-record-btn"
-                onClick={() => void handleStartRecording()}
-                className="w-full sm:w-auto min-h-[46px] inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#B91C1C] hover:bg-red-800 text-white text-xs sm:text-sm font-bold shadow-xs cursor-pointer"
-              >
-                <Mic className="w-4 h-4 shrink-0" />
-                <span>{t.startRecording}</span>
-                <span className="font-tabular text-white/85 text-xs">00:00</span>
-              </button>
-            ) : (
-              <div className="flex items-center gap-1.5 w-full sm:w-auto">
-                <button
-                  type="button"
-                  data-testid="thumb-stop-btn"
-                  onClick={handleStopRecording}
-                  className="flex-1 sm:flex-initial min-h-[46px] inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#1E2421] text-white text-xs sm:text-sm font-bold shadow-xs cursor-pointer"
-                >
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping shrink-0" />
-                  <span>{t.stopRecording}</span>
-                  <span className="font-tabular text-amber-300">{formattedTimer}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePauseResume}
-                  aria-label={
-                    recState === 'recording' ? t.pauseRecording : t.resumeRecording
-                  }
-                  className="min-h-[46px] min-w-[46px] inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-800 cursor-pointer"
-                >
-                  {recState === 'recording' ? (
-                    <Pause className="w-4 h-4" />
-                  ) : (
-                    <Play className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* 2. Clips (N) Drawer Button */}
-          <button
-            type="button"
-            data-testid="thumb-clips-btn"
-            onClick={() => setIsAudioDrawerOpen((v) => !v)}
-            className="flex-1 sm:flex-initial min-h-[46px] inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-[#1E2421] text-xs sm:text-sm font-semibold cursor-pointer"
-          >
-            <Headphones className="w-4 h-4 text-[#2B4C3F] shrink-0" />
-            <span>
-              {lang === 'ru' ? `Записи (${clips.length})` : `Clips (${clips.length})`}
-            </span>
-          </button>
-
-          {/* 3. Export PDF Quick Action Button */}
-          {onQuickExportPdf && (
-            <button
-              type="button"
-              data-testid="thumb-export-pdf-btn"
-              disabled={isExportingPdf}
-              onClick={onQuickExportPdf}
-              className="flex-1 sm:flex-initial min-h-[46px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[#2B4C3F] hover:bg-[#223D32] disabled:opacity-60 text-white text-xs sm:text-sm font-bold shadow-xs cursor-pointer"
-            >
-              <FileDown className="w-4 h-4 shrink-0" />
-              <span>
-                {isExportingPdf
-                  ? lang === 'ru'
-                    ? 'PDF...'
-                    : 'PDF...'
-                  : lang === 'ru'
-                    ? 'Экспорт PDF'
-                    : 'Export PDF'}
-              </span>
-            </button>
-          )}
-        </div>
-      </div>
     </>
   );
 };

@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { PDFDocument } from 'pdf-lib';
 import {
   ANATOMICAL_AREAS,
+  BODY_SEGMENTS,
   createEmptyEvaluationTable,
+  getBodySegmentForArea,
   syncAnnotationsWithTable,
 } from '../data/anatomicalAreas';
 import {
@@ -96,6 +98,25 @@ function makeTestFixtures(): { horse: HorseProfile; session: BodyworkSession } {
 }
 
 describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF Export', () => {
+  it('partitions all 19 anatomical areas into 3 interactive body segments (Head & Neck: 4, Torso & Pelvis: 8, Limbs & Hooves: 7)', () => {
+    assert.equal(BODY_SEGMENTS.length, 3);
+    assert.deepEqual(
+      BODY_SEGMENTS.map((s) => ({ id: s.id, count: s.areaIds.length })),
+      [
+        { id: 'head_neck', count: 4 },
+        { id: 'torso_pelvis', count: 8 },
+        { id: 'limbs', count: 7 },
+      ]
+    );
+    const allGroupedIds = BODY_SEGMENTS.flatMap((s) => s.areaIds);
+    assert.equal(allGroupedIds.length, 19);
+    assert.equal(new Set(allGroupedIds).size, 19);
+    assert.equal(getBodySegmentForArea('poll_front_atlas'), 'head_neck');
+    assert.equal(getBodySegmentForArea('saddle_outline'), 'torso_pelvis');
+    assert.equal(getBodySegmentForArea('hoof_point'), 'limbs');
+    assert.equal(getBodySegmentForArea('hind_fetlock'), 'limbs');
+  });
+
   it('defines all 8 quick release chips, 6 additional release signs, 5 resistance signs, and 12 Masterson techniques', () => {
     assert.equal(QUICK_RELEASE_CHIPS.length, 8);
     assert.deepEqual(

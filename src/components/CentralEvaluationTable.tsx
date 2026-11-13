@@ -8,7 +8,12 @@ import {
   ReactionLevel,
   Side,
 } from '../types';
-import { ANATOMICAL_AREAS, ANATOMICAL_REGIONS } from '../data/anatomicalAreas';
+import {
+  ANATOMICAL_AREAS,
+  ANATOMICAL_REGIONS,
+  BODY_SEGMENTS,
+  BodySegmentId,
+} from '../data/anatomicalAreas';
 import {
   formatChipLabel,
   isReleaseSignSelected,
@@ -45,7 +50,9 @@ interface CentralEvaluationTableProps {
   hoveredAreaTarget?: { areaId: AnatomicalAreaId; side?: Side } | null;
   onHoverArea?: (target: { areaId: AnatomicalAreaId; side?: Side } | null) => void;
   activeRegionFilter?: AnatomicalRegionId | 'all';
-  /** When provided on mobile List (19) mode, renders a fast 1-side thumb-friendly list */
+  /** Active 3-segment body region ('head_neck' | 'torso_pelvis' | 'limbs') for the unified single-screen view */
+  activeBodySegment?: BodySegmentId;
+  /** Active side ('left' | 'right') for the unified single-screen zone list */
   mobileSingleSide?: Side | null;
   /** Optional class applied only to the table/list container, never hiding the fixed Bottom Sheet */
   tableContainerClassName?: string;
@@ -145,6 +152,71 @@ const CellSymbols: React.FC<{ obs: AreaSideObservation }> = ({ obs }) => {
   );
 };
 
+/**
+ * Crisp status badges for the single-screen Region-Grouped Zone List:
+ * Shows R1/R2/R3, Restriction, Released, and Notes badges clearly.
+ */
+const ZoneStatusBadges: React.FC<{ obs: AreaSideObservation; lang: Language }> = ({
+  obs,
+  lang,
+}) => {
+  const hasNotes =
+    Boolean(obs.note?.trim()) ||
+    Boolean(obs.releaseSigns && obs.releaseSigns.length > 0) ||
+    Boolean(obs.resistanceSigns && obs.resistanceSigns.length > 0) ||
+    Boolean(obs.techniques && obs.techniques.length > 0);
+  const hasAny =
+    Boolean(obs.reaction) || obs.restriction || obs.released || hasNotes;
+
+  if (!hasAny) {
+    return (
+      <span className="text-[11px] text-slate-400 font-medium select-none">
+        {lang === 'ru' ? '—' : '—'}
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1 flex-wrap justify-end">
+      {obs.reaction && (
+        <span
+          data-testid={`badge-reaction-R${obs.reaction}`}
+          className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#B91C1C] text-white font-tabular text-[10px] font-bold leading-none"
+        >
+          R{obs.reaction}
+        </span>
+      )}
+      {obs.restriction && (
+        <span
+          data-testid="badge-restriction"
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-[#1E3A8A]/12 border border-[#1E3A8A]/40 text-[#1E3A8A] text-[10px] font-semibold leading-none"
+        >
+          <span className="w-2 h-2 rounded-full border border-[#1E3A8A] bg-[#1E3A8A]/20" />
+          <span>{lang === 'ru' ? 'Рестр.' : 'Restr.'}</span>
+        </span>
+      )}
+      {obs.released && (
+        <span
+          data-testid="badge-released"
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-[#15803D]/12 border border-[#15803D]/40 text-[#15803D] text-[10px] font-semibold leading-none"
+        >
+          <Check className="w-2.5 h-2.5 stroke-[2.8]" />
+          <span>{lang === 'ru' ? 'Релиз' : 'Released'}</span>
+        </span>
+      )}
+      {hasNotes && (
+        <span
+          data-testid="badge-notes"
+          className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-slate-200/80 text-slate-700 text-[10px] font-medium leading-none"
+          title={obs.note || obs.releaseSigns?.join(', ')}
+        >
+          <MessageSquareText className="w-2.5 h-2.5" />
+        </span>
+      )}
+    </div>
+  );
+};
+
 export const CentralEvaluationTable: React.FC<CentralEvaluationTableProps> = ({
   tableState,
   onUpdateCell,
@@ -155,6 +227,7 @@ export const CentralEvaluationTable: React.FC<CentralEvaluationTableProps> = ({
   hoveredAreaTarget = null,
   onHoverArea,
   activeRegionFilter = 'all',
+  activeBodySegment = 'head_neck',
   mobileSingleSide = null,
   tableContainerClassName = '',
 }) => {
@@ -197,96 +270,85 @@ export const CentralEvaluationTable: React.FC<CentralEvaluationTableProps> = ({
   return (
     <div className="relative w-full">
       <div className={tableContainerClassName}>
-      {/* SINGLE-SIDE MOBILE LIST (19) MODE */}
+      {/* MOBILE FULL 19-AREA LIST FOR THE ACTIVE SIDE (LEFT OR RIGHT) WITH NATURAL SCROLLING */}
       {mobileSingleSide ? (
         <div
           data-testid={`mobile-area-list-${mobileSingleSide}`}
-          className="overflow-hidden rounded-xl border border-slate-300 bg-[#FAF9F6] shadow-xs divide-y divide-slate-200"
+          className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-2xs"
         >
-          <div className="bg-[#2B4C3F] text-[#FAF9F6] px-3.5 py-2.5 text-xs font-semibold flex items-center justify-between">
+          {/* Header Bar */}
+          <div className="bg-[#2B4C3F] text-[#FAF9F6] px-3.5 py-2 text-xs font-semibold flex items-center justify-between">
             <span>
               {mobileSingleSide === 'left'
                 ? lang === 'ru'
-                  ? '19 анатомических зон — Слева'
-                  : '19 Anatomical Areas — Left Side'
+                  ? 'Левая сторона — 19 зон (1–19)'
+                  : 'Left Side — 19 Anatomical Areas'
                 : lang === 'ru'
-                  ? '19 анатомических зон — Справа'
-                  : '19 Anatomical Areas — Right Side'}
+                  ? 'Правая сторона — 19 зон (1–19)'
+                  : 'Right Side — 19 Anatomical Areas'}
             </span>
-            <span className="text-[11px] text-[#FAF9F6]/80">
-              {lang === 'ru' ? 'Нажмите для оценки' : 'Tap row to evaluate'}
+            <span className="text-[11px] text-[#FAF9F6]/80 font-normal">
+              {lang === 'ru' ? 'Нажмите на зону для оценки' : 'Tap any zone to evaluate'}
             </span>
           </div>
 
-          {ANATOMICAL_AREAS.map((area, idx) => {
-            const row = tableState[area.id] ?? {
-              left: { reaction: null, restriction: false, released: false, note: '' },
-              right: { reaction: null, restriction: false, released: false, note: '' },
-            };
-            const obs = row[mobileSingleSide];
-            const region = ANATOMICAL_REGIONS.find((r) => r.id === area.regionId);
-            const isSelected =
-              editingCell?.areaId === area.id && editingCell?.side === mobileSingleSide;
-            const isDimmedByFilter =
-              activeRegionFilter !== 'all' && activeRegionFilter !== area.regionId;
+          {/* All 19 Anatomical Areas */}
+          <div className="divide-y divide-slate-200">
+            {ANATOMICAL_AREAS.map((area, idx) => {
+              const row = tableState[area.id] ?? {
+                left: { reaction: null, restriction: false, released: false, note: '' },
+                right: { reaction: null, restriction: false, released: false, note: '' },
+              };
+              const obs = row[mobileSingleSide];
+              const region = ANATOMICAL_REGIONS.find((r) => r.id === area.regionId);
+              const isSelected =
+                editingCell?.areaId === area.id && editingCell?.side === mobileSingleSide;
 
-            return (
-              <button
-                key={area.id}
-                type="button"
-                data-testid={`mobile-list-row-${mobileSingleSide}-${area.id}`}
-                onClick={() =>
-                  !readOnly &&
-                  setEditingCell({ areaId: area.id, side: mobileSingleSide })
-                }
-                className={`w-full min-h-[52px] px-3 py-2 flex items-center justify-between gap-2.5 text-left transition-colors cursor-pointer ${
-                  isDimmedByFilter ? 'opacity-45' : ''
-                } ${
-                  isSelected
-                    ? 'bg-[#2B4C3F]/15 ring-2 ring-inset ring-[#2B4C3F]'
-                    : idx % 2 === 0
-                      ? 'bg-[#FAF9F6] hover:bg-[#EAE6DF]/60'
-                      : 'bg-[#F3F1EC] hover:bg-[#EAE6DF]/60'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span
-                    className="inline-flex items-center justify-center w-6 h-6 rounded-md text-[11px] font-tabular font-bold text-slate-800 shrink-0 border"
-                    style={{
-                      backgroundColor: region?.pastelFill ?? '#F3F1EC',
-                      borderColor: region?.pastelStroke ?? '#CBD5E1',
-                    }}
-                  >
-                    {area.index}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-xs font-semibold text-[#1E2421] truncate">
-                      {lang === 'ru' ? area.nameRu : area.nameEn}
-                    </div>
-                    {(obs.releaseSigns?.length ||
-                      obs.resistanceSigns?.length ||
-                      obs.techniques?.length ||
-                      obs.note) && (
-                      <div className="text-[11px] text-slate-500 truncate mt-0.5">
-                        {[
-                          ...(obs.releaseSigns ?? []),
-                          ...(obs.resistanceSigns ?? []),
-                          ...(obs.techniques ?? []),
-                          obs.note,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
+              return (
+                <button
+                  key={area.id}
+                  type="button"
+                  data-testid={`mobile-list-row-${mobileSingleSide}-${area.id}`}
+                  onPointerEnter={() =>
+                    onHoverArea?.({ areaId: area.id, side: mobileSingleSide })
+                  }
+                  onPointerLeave={() => onHoverArea?.(null)}
+                  onClick={() =>
+                    !readOnly &&
+                    setEditingCell({ areaId: area.id, side: mobileSingleSide })
+                  }
+                  className={`w-full min-h-[44px] px-3 py-2 flex items-center justify-between gap-2 text-left transition-colors cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#2B4C3F]/12'
+                      : idx % 2 === 0
+                        ? 'bg-[#FAF9F6] hover:bg-[#EAE6DF]/60'
+                        : 'bg-[#F3F1EC]/70 hover:bg-[#EAE6DF]/60'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <span
+                      className="inline-flex items-center justify-center w-6 h-6 rounded text-[11px] font-tabular font-bold text-slate-800 shrink-0 border"
+                      style={{
+                        backgroundColor: region?.pastelFill ?? '#F3F1EC',
+                        borderColor: region?.pastelStroke ?? '#CBD5E1',
+                      }}
+                    >
+                      {area.index}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-semibold text-[#1E2421] leading-snug truncate">
+                        {lang === 'ru' ? area.nameRu : area.nameEn}
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
 
-                <div className="shrink-0 flex items-center gap-2">
-                  <CellSymbols obs={obs} />
-                </div>
-              </button>
-            );
-          })}
+                  <div className="shrink-0">
+                    <ZoneStatusBadges obs={obs} lang={lang} />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       ) : (
         /* STANDARD 3-COLUMN TABLE (LEFT | AREA | RIGHT) */

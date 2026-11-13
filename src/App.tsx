@@ -39,8 +39,6 @@ import {
   serializeBackup,
 } from './db/backup';
 import {
-  ANATOMICAL_AREAS,
-  ANATOMICAL_REGIONS,
   createEmptyEvaluationTable,
   syncAnnotationsWithTable,
   TOP_VIEW_ANCHORS,
@@ -50,30 +48,19 @@ import {
   buildReportFromSession,
   getUnifiedSessionNotes,
 } from './utils/reportGenerator';
-import {
-  buildSessionPdfFile,
-  shareOrDownloadPdfFile,
-} from './utils/pdfExport';
 import { DrawingTool, HorseSilhouetteSvg } from './components/HorseSilhouetteSvg';
 import { CentralEvaluationTable } from './components/CentralEvaluationTable';
 import { EvaluationAudioNotesPanel } from './components/EvaluationAudioNotesPanel';
-import { SessionReportAndPdfView } from './components/SessionReportAndPdfView';
 import { HorsesAndBackupView } from './components/HorsesAndBackupView';
 import { OfflineConnectivityBanner, PWAInstallAction } from './pwa/PWAInstallBanner';
 import {
-  ChevronDown,
-  ChevronUp,
-  Eye,
-  Hash,
-  Layers,
-  List,
-  Map as MapIcon,
+  FileText,
+  Mic,
   Redo2,
-  Trash2,
   Undo2,
 } from 'lucide-react';
 
-type ActiveTab = 'editor' | 'horses' | 'report';
+type ActiveTab = 'editor' | 'horses';
 
 interface EvaluationHistorySnapshot {
   evaluationTable: EvaluationTableState;
@@ -106,17 +93,23 @@ export default function App() {
     areaId: AnatomicalAreaId;
     side?: Side;
   } | null>(null);
-  const [activeRegionFilter, setActiveRegionFilter] = useState<
-    AnatomicalRegionId | 'all'
-  >('all');
-  const [showPastelZones, setShowPastelZones] = useState<boolean>(true);
-  const [showLandmarkNumbers, setShowLandmarkNumbers] = useState<boolean>(true);
+  const [activeRegionFilter] = useState<AnatomicalRegionId | 'all'>('all');
 
-  // Mobile-First Practitioner Thumb-Zone State (< lg breakpoint)
+  // Mobile (< 1024px) diagram view switcher ('left' | 'right' | 'top') & responsive breakpoint
   const [mobileActiveView, setMobileActiveView] = useState<'left' | 'right' | 'top'>('left');
-  const [mobileMode, setMobileMode] = useState<'map' | 'list'>('map');
-  const [isSessionMetaExpanded, setIsSessionMetaExpanded] = useState<boolean>(false);
-  const [isExportingQuickPdf, setIsExportingQuickPdf] = useState<boolean>(false);
+  const [isDesktop, setIsDesktop] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
+  );
+  const [isAudioDrawerOpen, setIsAudioDrawerOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const mql = window.matchMedia('(min-width: 1024px)');
+    const handleResize = () => setIsDesktop(mql.matches);
+    handleResize();
+    mql.addEventListener('change', handleResize);
+    return () => mql.removeEventListener('change', handleResize);
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -349,50 +342,6 @@ export default function App() {
   };
 
   /**
-   * Clear all observations and markers on Left or Right side
-   */
-  const handleClearSideView = (side: Side) => {
-    if (!activeSession) return;
-    setUndoStack((prev) => [
-      ...prev.slice(-24),
-      {
-        evaluationTable: activeSession.evaluationTable,
-        annotations: activeSession.annotations,
-      },
-    ]);
-    setRedoStack([]);
-
-    const nextTable: EvaluationTableState = { ...activeSession.evaluationTable };
-    for (const area of ANATOMICAL_AREAS) {
-      nextTable[area.id] = {
-        ...nextTable[area.id],
-        [side]: {
-          reaction: null,
-          restriction: false,
-          released: false,
-          releaseSigns: [],
-          resistanceSigns: [],
-          techniques: [],
-          note: '',
-        },
-      };
-    }
-
-    const filteredAnns = activeSession.annotations.filter((a) => a.view !== side);
-    const nextAnnotations = syncAnnotationsWithTable(nextTable, filteredAnns);
-
-    if (activeTablePopover?.side === side) {
-      setActiveTablePopover(null);
-    }
-
-    void persistSessionUpdate({
-      ...activeSession,
-      evaluationTable: nextTable,
-      annotations: nextAnnotations,
-    });
-  };
-
-  /**
    * Synchronize Diagram Annotation changes -> Undo Stack + 19-Area Table
    */
   const handleUpdateAnnotations = (
@@ -579,28 +528,6 @@ export default function App() {
     });
   };
 
-  const handleQuickExportPdf = async () => {
-    if (!activeHorse || !activeSession) return;
-    setIsExportingQuickPdf(true);
-    try {
-      const pdfFile = await buildSessionPdfFile(
-        activeHorse,
-        activeSession,
-        'certification',
-        lang
-      );
-      await shareOrDownloadPdfFile(
-        pdfFile,
-        `Masterson Method Report — ${activeHorse.name}`
-      );
-    } catch (err) {
-      console.error('Quick PDF export failed:', err);
-      setActiveTab('report');
-    } finally {
-      setIsExportingQuickPdf(false);
-    }
-  };
-
   const handleExportBackup = async () => {
     const allHorses = await db.horses.toArray();
     const allSessions = await db.sessions.toArray();
@@ -709,175 +636,97 @@ export default function App() {
     );
   }
 
-  const unifiedSessionNotesValue = activeSession
-    ? getUnifiedSessionNotes(activeSession)
-    : '';
-  const ownerCareNotesValue =
-    activeSession?.reportSections?.postSessionCareNotes ?? '';
-
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-[#1E2421]">
-      {/* TOP NAVIGATION BAR */}
-      <header className="no-print sticky top-0 z-30 flex items-center justify-between gap-4 px-3 md:px-8 py-2.5 md:py-3.5 bg-[#FAF9F6]/95 backdrop-blur-xs border-b border-slate-300">
-        <a
-          href="#editor"
-          onClick={(e) => {
-            e.preventDefault();
-            setActiveTab('editor');
-          }}
-          className="text-base md:text-lg font-editorial font-bold tracking-tight text-[#2B4C3F] whitespace-nowrap shrink-0"
-        >
-          {t.appName}
-        </a>
+      {/* STICKY HEADER BAR: 2-Tab Navigation (Evaluation & Horses) + Subtle Mic Button + Language Switch */}
+      <header className="no-print sticky top-0 z-30 bg-[#FAF9F6]/95 backdrop-blur-xs border-b border-slate-300">
+        <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-2 px-3 md:px-6 py-2">
+          <a
+            href="#editor"
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveTab('editor');
+            }}
+            className="text-xs sm:text-sm md:text-base font-editorial font-bold tracking-tight text-[#2B4C3F] truncate shrink-0"
+          >
+            <span className="sm:hidden">Masterson</span>
+            <span className="hidden sm:inline">{t.appName}</span>
+          </a>
 
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
-          <button
-            type="button"
-            onClick={() => setActiveTab('editor')}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-              activeTab === 'editor'
-                ? 'text-[#2B4C3F] font-semibold underline underline-offset-8 decoration-2'
-                : 'hover:text-[#1E2421]'
-            }`}
-          >
-            {t.navCaseEditor}
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('horses')}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-              activeTab === 'horses'
-                ? 'text-[#2B4C3F] font-semibold underline underline-offset-8 decoration-2'
-                : 'hover:text-[#1E2421]'
-            }`}
-          >
-            {t.navHorses}
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('report')}
-            className={`py-1 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-              activeTab === 'report'
-                ? 'text-[#2B4C3F] font-semibold underline underline-offset-8 decoration-2'
-                : 'hover:text-[#1E2421]'
-            }`}
-          >
-            {t.navReport}
-          </button>
-        </nav>
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Two-Tab Primary Navigation: Evaluation | Horses */}
+            <nav
+              className="flex items-center bg-[#F3F1EC] p-0.5 rounded-lg border border-slate-300 text-xs font-semibold"
+              aria-label="Main Navigation"
+            >
+              {(
+                [
+                  {
+                    id: 'editor' as const,
+                    label: lang === 'ru' ? 'Оценка' : 'Evaluation',
+                  },
+                  {
+                    id: 'horses' as const,
+                    label: lang === 'ru' ? 'Лошади' : 'Horses',
+                  },
+                ]
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  data-testid={`nav-tab-${tab.id}`}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`px-3 sm:px-4 py-1.5 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                    activeTab === tab.id
+                      ? 'bg-[#2B4C3F] text-white shadow-2xs'
+                      : 'text-slate-700 hover:text-slate-900'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
 
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Mobile Navigation Pills inside Header to save vertical fold space */}
-          <div className="flex md:hidden items-center bg-[#F3F1EC] p-0.5 rounded-lg border border-slate-300 text-[11px] font-semibold">
-            {(['editor', 'horses', 'report'] as ActiveTab[]).map((tab) => (
+            {/* Subtle Microphone Icon Button (🎙 with clip count badge if > 0) */}
+            {activeHorse && activeSession && (
               <button
-                key={tab}
                 type="button"
-                onClick={() => setActiveTab(tab)}
-                className={`px-2 py-1 rounded-md cursor-pointer ${
-                  activeTab === tab
-                    ? 'bg-[#2B4C3F] text-white'
-                    : 'text-slate-700'
+                data-testid="header-audio-drawer-btn"
+                onClick={() => {
+                  if (activeTab !== 'editor') {
+                    setActiveTab('editor');
+                  }
+                  setIsAudioDrawerOpen((v) => !v);
+                }}
+                title={
+                  lang === 'ru'
+                    ? `Аудиозаписи (${voiceClips.length})`
+                    : `Audio Clips (${voiceClips.length})`
+                }
+                aria-label={
+                  lang === 'ru'
+                    ? `Аудиозаписи (${voiceClips.length})`
+                    : `Audio Clips (${voiceClips.length})`
+                }
+                className={`relative min-h-[34px] px-2.5 py-1 rounded-lg border text-xs font-semibold inline-flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                  isAudioDrawerOpen
+                    ? 'bg-[#2B4C3F] text-white border-[#2B4C3F]'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
                 }`}
               >
-                {tab === 'editor'
-                  ? t.navCaseEditor
-                  : tab === 'horses'
-                    ? lang === 'ru'
-                      ? 'Лошади'
-                      : 'Horses'
-                    : 'PDF'}
+                <Mic className="w-3.5 h-3.5 text-[#B91C1C]" />
+                {voiceClips.length > 0 && (
+                  <span
+                    data-testid="header-audio-clip-badge"
+                    className="px-1.5 py-0.5 rounded-full bg-[#2B4C3F] text-white font-tabular text-[10px] font-bold leading-none"
+                  >
+                    {voiceClips.length}
+                  </span>
+                )}
               </button>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => void handleCreateNewSession()}
-            className="hidden sm:inline-flex px-3.5 py-1.5 text-xs font-semibold text-white bg-[#2B4C3F] rounded-lg hover:bg-[#223D32] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            {t.newSession}
-          </button>
-        </div>
-      </header>
-
-      {/* COMPACT WORKSPACE UTILITY SUB-BAR: Horse/Session Switcher + EN/RU Language Switch */}
-      <div className="no-print border-b border-slate-300/80 bg-[#F3F1EC] px-2.5 md:px-8 py-1.5 md:py-2">
-        <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-1.5 text-xs">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <div className="flex items-center gap-1 min-w-0">
-              <label htmlFor="horse-switcher" className="font-semibold text-slate-600 hidden sm:inline">
-                {t.horseLabel}:
-              </label>
-              <select
-                id="horse-switcher"
-                value={activeHorse?.id ?? ''}
-                onChange={(e) => {
-                  const hId = e.target.value;
-                  const firstSess = sessions.find((s) => s.horseId === hId);
-                  void handleSelectHorseAndSession(hId, firstSess?.id ?? '');
-                }}
-                className="max-w-[130px] sm:max-w-none truncate rounded-md border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold text-[#1E2421]"
-              >
-                {horses.map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.name} {h.isDemo ? '(Demo)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {activeHorse && (
-              <div className="flex items-center gap-1 min-w-0">
-                <label htmlFor="session-switcher" className="font-semibold text-slate-600 hidden sm:inline">
-                  {t.sessionNum}:
-                </label>
-                <select
-                  id="session-switcher"
-                  value={activeSession?.id ?? ''}
-                  onChange={(e) =>
-                    void handleSelectHorseAndSession(activeHorse.id, e.target.value)
-                  }
-                  className="max-w-[135px] sm:max-w-none truncate rounded-md border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold font-tabular text-[#1E2421]"
-                >
-                  {sessions
-                    .filter((s) => s.horseId === activeHorse.id)
-                    .sort((a, b) => b.sessionNumber - a.sessionNumber)
-                    .map((s) => (
-                      <option key={s.id} value={s.id}>
-                        #{s.sessionNumber} · {s.date}
-                      </option>
-                    ))}
-                </select>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            {activeHorse?.isDemo && (
-              <div className="hidden lg:flex items-center gap-1.5 bg-amber-100/80 border border-amber-300 text-amber-950 px-2.5 py-0.5 rounded-md text-[11px]">
-                <span className="font-medium">{t.demoBadge}</span>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await deleteDemonstrationCase();
-                    const remH = await db.horses.toArray();
-                    const remS = await db.sessions.toArray();
-                    setHorses(remH);
-                    setSessions(remS);
-                    await handleSelectHorseAndSession(
-                      remH[0]?.id ?? '',
-                      remS[0]?.id ?? ''
-                    );
-                  }}
-                  className="underline font-semibold text-red-800 hover:text-red-950 ml-1 cursor-pointer whitespace-nowrap"
-                >
-                  {t.deleteDemo}
-                </button>
-              </div>
             )}
 
-            <div className="hidden sm:block">
+            <div className="hidden lg:block">
               <PWAInstallAction lang={lang} />
             </div>
 
@@ -890,7 +739,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => void handleLanguageChange('en')}
-                className={`px-2 py-0.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
                   lang === 'en'
                     ? 'bg-[#2B4C3F] text-white'
                     : 'text-slate-600 hover:text-slate-900'
@@ -901,7 +750,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => void handleLanguageChange('ru')}
-                className={`px-2 py-0.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
                   lang === 'ru'
                     ? 'bg-[#2B4C3F] text-white'
                     : 'text-slate-600 hover:text-slate-900'
@@ -912,10 +761,115 @@ export default function App() {
             </div>
           </div>
         </div>
-      </div>
 
-      {/* MAIN CONTENT STAGE (pb-28 so Sticky Bottom Thumb Bar never obscures lower hooves) */}
-      <main className="flex-1 w-full max-w-[1400px] mx-auto px-2.5 md:px-8 py-2.5 md:py-5 pb-28">
+        {/* Sub-Row: Horse/Session Selector + Mobile View Switcher (Left | Right | Top) + Undo/Redo */}
+        {activeHorse && activeSession && (
+          <div className="border-t border-slate-200/90 bg-[#F3F1EC] px-2.5 md:px-6 py-1.5">
+            <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-1.5 sm:gap-2 text-xs">
+              <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1">
+                <select
+                  id="horse-switcher"
+                  aria-label={t.horseLabel}
+                  value={activeHorse.id}
+                  onChange={(e) => {
+                    const hId = e.target.value;
+                    const firstSess = sessions
+                      .filter((s) => s.horseId === hId)
+                      .sort((a, b) => b.sessionNumber - a.sessionNumber)[0];
+                    void handleSelectHorseAndSession(hId, firstSess?.id ?? '');
+                  }}
+                  className="max-w-[100px] sm:max-w-[200px] truncate rounded-md border border-slate-300 bg-white px-1.5 sm:px-2 py-1 text-[11px] sm:text-xs font-semibold text-[#1E2421]"
+                >
+                  {horses.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name} {h.isDemo ? '(Demo)' : ''}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  id="session-switcher"
+                  aria-label={t.sessionNum}
+                  value={activeSession.id}
+                  onChange={(e) =>
+                    void handleSelectHorseAndSession(activeHorse.id, e.target.value)
+                  }
+                  className="max-w-[88px] sm:max-w-[180px] truncate rounded-md border border-slate-300 bg-white px-1.5 sm:px-2 py-1 text-[11px] sm:text-xs font-semibold font-tabular text-[#1E2421]"
+                >
+                  {sessions
+                    .filter((s) => s.horseId === activeHorse.id)
+                    .sort((a, b) => b.sessionNumber - a.sessionNumber)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        #{s.sessionNumber} · {s.date}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {activeTab === 'editor' && (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Mobile (< 1024px) Segmented View Switcher: Left | Right | Top */}
+                  {!isDesktop && (
+                    <div
+                      data-testid="mobile-thumb-top-bar"
+                      className="inline-flex rounded-lg bg-white p-0.5 border border-slate-300"
+                      role="group"
+                      aria-label="View Switcher"
+                    >
+                      {(
+                        [
+                          { id: 'left' as const, label: t.tableLeft },
+                          { id: 'right' as const, label: t.tableRight },
+                          { id: 'top' as const, label: lang === 'ru' ? 'Сверху' : 'Top' },
+                        ]
+                      ).map((v) => (
+                        <button
+                          key={v.id}
+                          type="button"
+                          data-testid={`mobile-view-${v.id}`}
+                          onClick={() => setMobileActiveView(v.id)}
+                          className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer ${
+                            mobileActiveView === v.id
+                              ? 'bg-[#2B4C3F] text-white shadow-2xs'
+                              : 'text-slate-700 hover:text-slate-900'
+                          }`}
+                        >
+                          {v.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={undoStack.length === 0}
+                    onClick={handleUndo}
+                    aria-label={t.undo}
+                    title={t.undo}
+                    className="p-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 cursor-pointer"
+                  >
+                    <Undo2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={redoStack.length === 0}
+                    onClick={handleRedo}
+                    aria-label={t.redo}
+                    title={t.redo}
+                    className="hidden sm:inline-flex p-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 cursor-pointer"
+                  >
+                    <Redo2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </header>
+
+      {/* MAIN CONTENT STAGE */}
+      <main className="flex-1 w-full max-w-[1400px] mx-auto px-3 md:px-8 py-4 md:py-6 pb-16">
         {!activeHorse || !activeSession ? (
           <HorsesAndBackupView
             horses={horses}
@@ -924,6 +878,9 @@ export default function App() {
             activeSessionId={activeSessionId}
             lang={lang}
             onSelectHorseAndSession={(hId, sId) => {
+              void handleSelectHorseAndSession(hId, sId);
+            }}
+            onEditSessionOnMap={(hId, sId) => {
               void handleSelectHorseAndSession(hId, sId);
               setActiveTab('editor');
             }}
@@ -957,14 +914,19 @@ export default function App() {
             }}
           />
         ) : activeTab === 'editor' ? (
-          /* TAB 1: MOBILE-FIRST HORSE EVALUATION WORKSPACE & STICKY BOTTOM THUMB BAR */
-          <div className="space-y-3">
-            {/* Conditional Interrupted Audio Recovery Banner (Top) + Sticky Bottom Thumb Bar */}
+          /* TAB 1: CLEAN EVALUATION SCREEN (Desktop 3-Column + Mobile Full-Horse & 19-Area List) */
+          <div
+            data-testid="evaluation-workspace"
+            className="space-y-6"
+          >
+            {/* Conditional Interrupted Audio Recovery Banner + Controlled Audio Clips Drawer */}
             <EvaluationAudioNotesPanel
               session={activeSession}
               clips={voiceClips}
               lang={lang}
               installedModels={installedModels}
+              isOpen={isAudioDrawerOpen}
+              onClose={() => setIsAudioDrawerOpen(false)}
               onSaveClip={async (clip) => {
                 await db.voiceClips.put(clip);
                 const updated = await db.voiceClips
@@ -991,358 +953,266 @@ export default function App() {
               }}
               onApplySuggestion={handleApplySuggestion}
               onNavigateToHorses={() => setActiveTab('horses')}
-              onQuickExportPdf={() => void handleQuickExportPdf()}
-              isExportingPdf={isExportingQuickPdf}
             />
 
-            {/* ==============================================================
-                MOBILE "HORSE FIRST ABOVE THE FOLD" CONTROLS (< lg breakpoint)
-                Segmented View Switcher: Left | Right | Top
-                Mode Toggle: Map | List (19)
-               ============================================================== */}
-            <div
-              data-testid="mobile-thumb-top-bar"
-              className="lg:hidden flex items-center justify-between gap-1.5 bg-white p-1.5 rounded-xl border border-slate-300 shadow-2xs"
-            >
-              {/* Segmented View Switcher: Left | Right | Top */}
+            {isDesktop ? (
+              /* DESKTOP (>= 1024px): Classic 3-Column Masterson Layout (Left Profile | 19-Area Table | Right Profile) + Top View Below */
               <div
-                className="inline-flex rounded-lg bg-[#F3F1EC] p-0.5 border border-slate-300 shrink-0"
-                role="group"
-                aria-label="Mobile View Switcher"
+                data-testid="desktop-three-column-evaluation"
+                className="space-y-6"
               >
-                {(
-                  [
-                    { id: 'left', label: t.tableLeft },
-                    { id: 'right', label: t.tableRight },
-                    { id: 'top', label: lang === 'ru' ? 'Сверху' : 'Top' },
-                  ] as const
-                ).map((v) => (
-                  <button
-                    key={v.id}
-                    type="button"
-                    data-testid={`mobile-view-${v.id}`}
-                    onClick={() => setMobileActiveView(v.id)}
-                    className={`min-h-[36px] px-2.5 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer ${
-                      mobileActiveView === v.id
-                        ? 'bg-[#2B4C3F] text-white shadow-2xs'
-                        : 'text-slate-700 hover:text-slate-900'
-                    }`}
-                  >
-                    {v.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Quick Mode Toggle: Map | List (19) + Undo/Redo */}
-              <div className="flex items-center gap-1 shrink-0">
-                {mobileActiveView !== 'top' && (
-                  <div
-                    className="inline-flex rounded-lg bg-[#F3F1EC] p-0.5 border border-slate-300"
-                    role="group"
-                    aria-label="Map or List Mode"
-                  >
-                    <button
-                      type="button"
-                      data-testid="mobile-mode-map"
-                      onClick={() => setMobileMode('map')}
-                      className={`min-h-[36px] inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold cursor-pointer ${
-                        mobileMode === 'map'
-                          ? 'bg-white text-[#2B4C3F] shadow-2xs'
-                          : 'text-slate-600'
-                      }`}
-                    >
-                      <MapIcon className="w-3.5 h-3.5" />
-                      <span>{lang === 'ru' ? 'Схема' : 'Map'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="mobile-mode-list"
-                      onClick={() => setMobileMode('list')}
-                      className={`min-h-[36px] inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold cursor-pointer ${
-                        mobileMode === 'list'
-                          ? 'bg-white text-[#2B4C3F] shadow-2xs'
-                          : 'text-slate-600'
-                      }`}
-                    >
-                      <List className="w-3.5 h-3.5" />
-                      <span>{lang === 'ru' ? 'Список (19)' : 'List (19)'}</span>
-                    </button>
+                <div className="grid grid-cols-12 gap-5 items-start">
+                  {/* Left Profile Column */}
+                  <div className="col-span-4 rounded-xl border border-slate-300 bg-white p-3.5 shadow-2xs space-y-2 sticky top-24">
+                    <h2 className="text-xs font-bold uppercase tracking-wide text-[#2B4C3F] text-center">
+                      {t.leftProfileTitle}
+                    </h2>
+                    <HorseSilhouetteSvg
+                      view="left"
+                      evaluationTable={activeSession.evaluationTable}
+                      annotations={activeSession.annotations}
+                      activeTool={activeTool}
+                      activeColor={activeColor}
+                      selectedAnnotationId={selectedAnnotationId}
+                      onSelectAnnotation={setSelectedAnnotationId}
+                      onChangeAnnotations={handleUpdateAnnotations}
+                      selectedAreaTarget={activeTablePopover}
+                      hoveredAreaTarget={hoveredAreaTarget}
+                      onHoverArea={setHoveredAreaTarget}
+                      onAreaLandmarkClick={(areaId, side) =>
+                        setActiveTablePopover({ areaId, side })
+                      }
+                      activeRegionFilter={activeRegionFilter}
+                      showPastelZones={true}
+                      showLandmarkNumbers={true}
+                      lang={lang}
+                    />
                   </div>
-                )}
 
-                <button
-                  type="button"
-                  disabled={undoStack.length === 0}
-                  onClick={handleUndo}
-                  aria-label={t.undo}
-                  className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-lg border border-slate-300 bg-[#FAF9F6] disabled:opacity-40 cursor-pointer"
-                >
-                  <Undo2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+                  {/* Center Full 19-Area Bilateral Table Column */}
+                  <div className="col-span-4">
+                    <CentralEvaluationTable
+                      tableState={activeSession.evaluationTable}
+                      onUpdateCell={handleUpdateTableCell}
+                      lang={lang}
+                      activePopover={activeTablePopover}
+                      onChangeActivePopover={setActiveTablePopover}
+                      hoveredAreaTarget={hoveredAreaTarget}
+                      onHoverArea={setHoveredAreaTarget}
+                      activeRegionFilter={activeRegionFilter}
+                    />
+                  </div>
 
-            {/* MOBILE ACTIVE HORSE SILHOUETTE ABOVE THE FOLD (< lg breakpoint) */}
-            {mobileMode === 'map' || mobileActiveView === 'top' ? (
-              <div
-                data-testid="mobile-above-fold-diagram"
-                className="lg:hidden rounded-xl border border-slate-300 bg-white p-3 shadow-xs space-y-2"
-              >
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-[#2B4C3F]">
-                    {mobileActiveView === 'left'
-                      ? t.leftProfileTitle
-                      : mobileActiveView === 'right'
-                        ? t.rightProfileTitle
-                        : t.topViewTitle}
-                  </span>
-                  {mobileActiveView !== 'top' && (
-                    <button
-                      type="button"
-                      onClick={() => handleClearSideView(mobileActiveView)}
-                      className="text-[11px] text-slate-500 hover:text-red-700 cursor-pointer"
-                    >
-                      {t.clearView}
-                    </button>
-                  )}
+                  {/* Right Profile Column */}
+                  <div className="col-span-4 rounded-xl border border-slate-300 bg-white p-3.5 shadow-2xs space-y-2 sticky top-24">
+                    <h2 className="text-xs font-bold uppercase tracking-wide text-[#2B4C3F] text-center">
+                      {t.rightProfileTitle}
+                    </h2>
+                    <HorseSilhouetteSvg
+                      view="right"
+                      evaluationTable={activeSession.evaluationTable}
+                      annotations={activeSession.annotations}
+                      activeTool={activeTool}
+                      activeColor={activeColor}
+                      selectedAnnotationId={selectedAnnotationId}
+                      onSelectAnnotation={setSelectedAnnotationId}
+                      onChangeAnnotations={handleUpdateAnnotations}
+                      selectedAreaTarget={activeTablePopover}
+                      hoveredAreaTarget={hoveredAreaTarget}
+                      onHoverArea={setHoveredAreaTarget}
+                      onAreaLandmarkClick={(areaId, side) =>
+                        setActiveTablePopover({ areaId, side })
+                      }
+                      activeRegionFilter={activeRegionFilter}
+                      showPastelZones={true}
+                      showLandmarkNumbers={true}
+                      lang={lang}
+                    />
+                  </div>
                 </div>
 
-                {mobileActiveView === 'top' && (
-                  <div className="flex flex-wrap items-center gap-1 text-[11px]">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleSetPredominantDiagonalPreset('left_atlas', 'right_gluteal')
-                      }
-                      className="px-2 py-1 rounded border border-slate-300 bg-[#FAF9F6] font-medium"
-                    >
-                      L Atlas → R Gluteal
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleSetPredominantDiagonalPreset('right_atlas', 'left_gluteal')
-                      }
-                      className="px-2 py-1 rounded border border-slate-300 bg-[#FAF9F6] font-medium"
-                    >
-                      R Atlas → L Gluteal
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleSetPredominantDiagonalPreset('left_atlas', 'right_sacrum')
-                      }
-                      className="px-2 py-1 rounded border border-slate-300 bg-[#FAF9F6] font-medium"
-                    >
-                      L Atlas → R Sacrum
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleSetPredominantDiagonalPreset('right_atlas', 'left_sacrum')
-                      }
-                      className="px-2 py-1 rounded border border-slate-300 bg-[#FAF9F6] font-medium"
-                    >
-                      R Atlas → L Sacrum
-                    </button>
-                  </div>
-                )}
+                {/* Desktop Top View & Predominant Diagonal Below */}
+                <div className="rounded-xl border border-slate-300 bg-white p-5 shadow-2xs space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-sm font-bold text-[#2B4C3F]">
+                        {t.topViewTitle}
+                      </h2>
+                      <p className="text-xs text-slate-600">{t.step3Desc}</p>
+                    </div>
 
-                <HorseSilhouetteSvg
-                  view={mobileActiveView}
-                  evaluationTable={activeSession.evaluationTable}
-                  annotations={activeSession.annotations}
-                  activeTool={activeTool}
-                  activeColor={activeColor}
-                  selectedAnnotationId={selectedAnnotationId}
-                  onSelectAnnotation={setSelectedAnnotationId}
-                  onChangeAnnotations={handleUpdateAnnotations}
-                  onSelectDiagonalAnchors={handleSetPredominantDiagonalPreset}
-                  selectedAreaTarget={activeTablePopover}
-                  hoveredAreaTarget={hoveredAreaTarget}
-                  onHoverArea={setHoveredAreaTarget}
-                  onAreaLandmarkClick={(areaId, side) =>
-                    setActiveTablePopover({ areaId, side })
-                  }
-                  activeRegionFilter={activeRegionFilter}
-                  showPastelZones={showPastelZones}
-                  showLandmarkNumbers={showLandmarkNumbers}
-                  lang={lang}
-                />
-              </div>
-            ) : null}
-
-            {/* DESKTOP ANATOMICAL ZONING & MARKER CONTROL BAR (hidden on compact mobile above-the-fold) */}
-            <section
-              data-testid="anatomical-region-toolbar"
-              className="hidden lg:block rounded-xl border border-slate-300 bg-white p-3.5 shadow-xs space-y-3"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2.5">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 mr-1">
-                    <Layers className="w-3.5 h-3.5 text-[#2B4C3F]" />
-                    {lang === 'ru' ? 'Анатомические зоны:' : 'Anatomical Zones:'}
-                  </span>
-
-                  <button
-                    type="button"
-                    data-testid="region-filter-all"
-                    onClick={() => setActiveRegionFilter('all')}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      activeRegionFilter === 'all'
-                        ? 'bg-[#2B4C3F] text-white shadow-2xs'
-                        : 'bg-[#FAF9F6] text-slate-700 border border-slate-300 hover:bg-slate-100'
-                    }`}
-                  >
-                    {lang === 'ru' ? 'Все зоны (1–19)' : 'All Zones (1–19)'}
-                  </button>
-
-                  {ANATOMICAL_REGIONS.map((region) => {
-                    const isSelected = activeRegionFilter === region.id;
-                    return (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                       <button
-                        key={region.id}
                         type="button"
-                        data-testid={`region-filter-${region.id}`}
+                        data-testid="top-preset-la-rg"
                         onClick={() =>
-                          setActiveRegionFilter(isSelected ? 'all' : region.id)
+                          handleSetPredominantDiagonalPreset('left_atlas', 'right_gluteal')
                         }
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer border ${
-                          isSelected
-                            ? 'ring-2 ring-[#2B4C3F] font-semibold text-[#1E2421] shadow-2xs'
-                            : 'text-slate-700 hover:text-slate-900'
-                        }`}
-                        style={{
-                          backgroundColor: isSelected
-                            ? region.activeFill
-                            : '#FAF9F6',
-                          borderColor: isSelected
-                            ? region.activeStroke
-                            : region.pastelStroke,
-                        }}
+                        className="px-3 py-1.5 rounded-lg border border-slate-300 bg-[#FAF9F6] hover:bg-[#2B4C3F]/10 font-semibold text-[#1E2421] cursor-pointer"
                       >
-                        <span
-                          className="w-2.5 h-2.5 rounded-xs border shrink-0"
-                          style={{
-                            backgroundColor: region.pastelFill,
-                            borderColor: region.activeStroke,
-                          }}
-                        />
-                        <span>{lang === 'ru' ? region.nameRu : region.nameEn}</span>
+                        L Atlas → R Gluteal
                       </button>
-                    );
-                  })}
-                </div>
+                      <button
+                        type="button"
+                        data-testid="top-preset-ra-lg"
+                        onClick={() =>
+                          handleSetPredominantDiagonalPreset('right_atlas', 'left_gluteal')
+                        }
+                        className="px-3 py-1.5 rounded-lg border border-slate-300 bg-[#FAF9F6] hover:bg-[#2B4C3F]/10 font-semibold text-[#1E2421] cursor-pointer"
+                      >
+                        R Atlas → L Gluteal
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="top-preset-la-rs"
+                        onClick={() =>
+                          handleSetPredominantDiagonalPreset('left_atlas', 'right_sacrum')
+                        }
+                        className="px-3 py-1.5 rounded-lg border border-slate-300 bg-[#FAF9F6] hover:bg-[#2B4C3F]/10 font-semibold text-[#1E2421] cursor-pointer"
+                      >
+                        L Atlas → R Sacrum
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="top-preset-ra-ls"
+                        onClick={() =>
+                          handleSetPredominantDiagonalPreset('right_atlas', 'left_sacrum')
+                        }
+                        className="px-3 py-1.5 rounded-lg border border-slate-300 bg-[#FAF9F6] hover:bg-[#2B4C3F]/10 font-semibold text-[#1E2421] cursor-pointer"
+                      >
+                        R Atlas → L Sacrum
+                      </button>
+                    </div>
+                  </div>
 
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setShowPastelZones((v) => !v)}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border cursor-pointer transition-colors ${
-                      showPastelZones
-                        ? 'bg-[#2B4C3F]/10 border-[#2B4C3F]/40 text-[#2B4C3F] font-semibold'
-                        : 'bg-[#FAF9F6] border-slate-300 text-slate-600'
-                    }`}
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>{lang === 'ru' ? 'Зоны' : 'Zones'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setShowLandmarkNumbers((v) => !v)}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border cursor-pointer transition-colors ${
-                      showLandmarkNumbers
-                        ? 'bg-[#2B4C3F]/10 border-[#2B4C3F]/40 text-[#2B4C3F] font-semibold'
-                        : 'bg-[#FAF9F6] border-slate-300 text-slate-600'
-                    }`}
-                  >
-                    <Hash className="w-3.5 h-3.5" />
-                    <span>1–19</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={undoStack.length === 0}
-                    onClick={handleUndo}
-                    aria-label={t.undo}
-                    title={t.undo}
-                    className="p-1.5 rounded-lg border border-slate-300 bg-[#FAF9F6] hover:bg-slate-100 disabled:opacity-40 cursor-pointer"
-                  >
-                    <Undo2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={redoStack.length === 0}
-                    onClick={handleRedo}
-                    aria-label={t.redo}
-                    title={t.redo}
-                    className="p-1.5 rounded-lg border border-slate-300 bg-[#FAF9F6] hover:bg-slate-100 disabled:opacity-40 cursor-pointer"
-                  >
-                    <Redo2 className="w-4 h-4" />
-                  </button>
-
-                  {selectedAnnotationId && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = activeSession.annotations.filter(
-                          (a) => a.id !== selectedAnnotationId
-                        );
-                        handleUpdateAnnotations(next);
-                        setSelectedAnnotationId(null);
-                      }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-medium cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>{lang === 'ru' ? 'Удалить' : 'Delete'}</span>
-                    </button>
-                  )}
+                  <div className="max-w-3xl mx-auto">
+                    <HorseSilhouetteSvg
+                      view="top"
+                      evaluationTable={activeSession.evaluationTable}
+                      annotations={activeSession.annotations}
+                      activeTool="select"
+                      activeColor={activeColor}
+                      selectedAnnotationId={selectedAnnotationId}
+                      onSelectAnnotation={setSelectedAnnotationId}
+                      onChangeAnnotations={handleUpdateAnnotations}
+                      onSelectDiagonalAnchors={handleSetPredominantDiagonalPreset}
+                      activeRegionFilter={activeRegionFilter}
+                      showPastelZones={true}
+                      lang={lang}
+                    />
+                  </div>
                 </div>
               </div>
-            </section>
-
-            {/* MAIN 3-COLUMN DESKTOP EVALUATION SHEET + MOBILE LIST (19) / BOTTOM SHEET HOST */}
-            <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-              {/* Column A: Desktop Left Profile */}
-              <div className="hidden lg:block lg:col-span-4 lg:sticky lg:top-16 rounded-xl border border-slate-300 bg-white p-4 shadow-xs space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-[#2B4C3F]">
-                    {t.leftProfileTitle}
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={() => handleClearSideView('left')}
-                    className="text-[11px] text-slate-500 hover:text-red-700 cursor-pointer"
+            ) : (
+              /* MOBILE (< 1024px): Complete Horse Diagram at Top + Full 19-Area List Below with Natural Scrolling */
+              <div
+                data-testid="mobile-full-horse-evaluation"
+                className="space-y-4"
+              >
+                {mobileActiveView !== 'top' ? (
+                  <div
+                    data-testid="mobile-above-fold-diagram"
+                    className="rounded-xl border border-slate-300 bg-white p-3 shadow-2xs space-y-2"
                   >
-                    {t.clearView}
-                  </button>
-                </div>
+                    <div className="text-xs font-bold uppercase tracking-wide text-[#2B4C3F] text-center">
+                      {mobileActiveView === 'left'
+                        ? t.leftProfileTitle
+                        : t.rightProfileTitle}
+                    </div>
+                    <HorseSilhouetteSvg
+                      view={mobileActiveView}
+                      evaluationTable={activeSession.evaluationTable}
+                      annotations={activeSession.annotations}
+                      activeTool={activeTool}
+                      activeColor={activeColor}
+                      selectedAnnotationId={selectedAnnotationId}
+                      onSelectAnnotation={setSelectedAnnotationId}
+                      onChangeAnnotations={handleUpdateAnnotations}
+                      selectedAreaTarget={activeTablePopover}
+                      hoveredAreaTarget={hoveredAreaTarget}
+                      onHoverArea={setHoveredAreaTarget}
+                      onAreaLandmarkClick={(areaId, side) =>
+                        setActiveTablePopover({ areaId, side })
+                      }
+                      activeRegionFilter={activeRegionFilter}
+                      showPastelZones={true}
+                      showLandmarkNumbers={true}
+                      lang={lang}
+                    />
+                  </div>
+                ) : (
+                  <div
+                    data-testid="mobile-above-fold-diagram"
+                    className="rounded-xl border border-slate-300 bg-white p-3.5 shadow-2xs space-y-3"
+                  >
+                    <div>
+                      <h2 className="text-xs sm:text-sm font-bold text-[#2B4C3F]">
+                        {t.topViewTitle}
+                      </h2>
+                      <p className="text-[11px] text-slate-600 mt-0.5">{t.step3Desc}</p>
+                    </div>
 
-                <HorseSilhouetteSvg
-                  view="left"
-                  evaluationTable={activeSession.evaluationTable}
-                  annotations={activeSession.annotations}
-                  activeTool={activeTool}
-                  activeColor={activeColor}
-                  selectedAnnotationId={selectedAnnotationId}
-                  onSelectAnnotation={setSelectedAnnotationId}
-                  onChangeAnnotations={handleUpdateAnnotations}
-                  selectedAreaTarget={activeTablePopover}
-                  hoveredAreaTarget={hoveredAreaTarget}
-                  onHoverArea={setHoveredAreaTarget}
-                  onAreaLandmarkClick={(areaId, side) =>
-                    setActiveTablePopover({ areaId, side })
-                  }
-                  activeRegionFilter={activeRegionFilter}
-                  showPastelZones={showPastelZones}
-                  showLandmarkNumbers={showLandmarkNumbers}
-                  lang={lang}
-                />
-              </div>
+                    <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                      <button
+                        type="button"
+                        data-testid="top-preset-la-rg"
+                        onClick={() =>
+                          handleSetPredominantDiagonalPreset('left_atlas', 'right_gluteal')
+                        }
+                        className="min-h-[38px] px-2 py-1.5 rounded-lg border border-slate-300 bg-[#FAF9F6] hover:bg-[#2B4C3F]/10 font-semibold text-[#1E2421] cursor-pointer"
+                      >
+                        L Atlas → R Gluteal
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="top-preset-ra-lg"
+                        onClick={() =>
+                          handleSetPredominantDiagonalPreset('right_atlas', 'left_gluteal')
+                        }
+                        className="min-h-[38px] px-2 py-1.5 rounded-lg border border-slate-300 bg-[#FAF9F6] hover:bg-[#2B4C3F]/10 font-semibold text-[#1E2421] cursor-pointer"
+                      >
+                        R Atlas → L Gluteal
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="top-preset-la-rs"
+                        onClick={() =>
+                          handleSetPredominantDiagonalPreset('left_atlas', 'right_sacrum')
+                        }
+                        className="min-h-[38px] px-2 py-1.5 rounded-lg border border-slate-300 bg-[#FAF9F6] hover:bg-[#2B4C3F]/10 font-semibold text-[#1E2421] cursor-pointer"
+                      >
+                        L Atlas → R Sacrum
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="top-preset-ra-ls"
+                        onClick={() =>
+                          handleSetPredominantDiagonalPreset('right_atlas', 'left_sacrum')
+                        }
+                        className="min-h-[38px] px-2 py-1.5 rounded-lg border border-slate-300 bg-[#FAF9F6] hover:bg-[#2B4C3F]/10 font-semibold text-[#1E2421] cursor-pointer"
+                      >
+                        R Atlas → L Sacrum
+                      </button>
+                    </div>
 
-              {/* Center Column: 19-Area Table (Desktop 3-col, Mobile List (19) when selected, + Always-Mounted Bottom Sheet Zone Editor) */}
-              <div className="lg:col-span-4">
+                    <HorseSilhouetteSvg
+                      view="top"
+                      evaluationTable={activeSession.evaluationTable}
+                      annotations={activeSession.annotations}
+                      activeTool="select"
+                      activeColor={activeColor}
+                      selectedAnnotationId={selectedAnnotationId}
+                      onSelectAnnotation={setSelectedAnnotationId}
+                      onChangeAnnotations={handleUpdateAnnotations}
+                      onSelectDiagonalAnchors={handleSetPredominantDiagonalPreset}
+                      activeRegionFilter={activeRegionFilter}
+                      showPastelZones={true}
+                      lang={lang}
+                    />
+                  </div>
+                )}
+
+                {/* Full 19-Area List for Active Side (Left or Right) Directly Below */}
                 <CentralEvaluationTable
                   tableState={activeSession.evaluationTable}
                   onUpdateCell={handleUpdateTableCell}
@@ -1352,428 +1222,33 @@ export default function App() {
                   hoveredAreaTarget={hoveredAreaTarget}
                   onHoverArea={setHoveredAreaTarget}
                   activeRegionFilter={activeRegionFilter}
-                  mobileSingleSide={
-                    mobileMode === 'list' && mobileActiveView !== 'top'
-                      ? mobileActiveView
-                      : null
-                  }
-                  tableContainerClassName={
-                    mobileMode === 'list' && mobileActiveView !== 'top'
-                      ? 'block'
-                      : 'hidden lg:block'
-                  }
+                  mobileSingleSide={mobileActiveView === 'right' ? 'right' : 'left'}
                 />
               </div>
+            )}
 
-              {/* Column B: Desktop Right Profile */}
-              <div className="hidden lg:block lg:col-span-4 lg:sticky lg:top-16 rounded-xl border border-slate-300 bg-white p-4 shadow-xs space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-[#2B4C3F]">
-                    {t.rightProfileTitle}
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={() => handleClearSideView('right')}
-                    className="text-[11px] text-slate-500 hover:text-red-700 cursor-pointer"
-                  >
-                    {t.clearView}
-                  </button>
-                </div>
-
-                <HorseSilhouetteSvg
-                  view="right"
-                  evaluationTable={activeSession.evaluationTable}
-                  annotations={activeSession.annotations}
-                  activeTool={activeTool}
-                  activeColor={activeColor}
-                  selectedAnnotationId={selectedAnnotationId}
-                  onSelectAnnotation={setSelectedAnnotationId}
-                  onChangeAnnotations={handleUpdateAnnotations}
-                  selectedAreaTarget={activeTablePopover}
-                  hoveredAreaTarget={hoveredAreaTarget}
-                  onHoverArea={setHoveredAreaTarget}
-                  onAreaLandmarkClick={(areaId, side) =>
-                    setActiveTablePopover({ areaId, side })
-                  }
-                  activeRegionFilter={activeRegionFilter}
-                  showPastelZones={showPastelZones}
-                  showLandmarkNumbers={showLandmarkNumbers}
-                  lang={lang}
-                />
-              </div>
-            </section>
-
-            {/* STEP 3 — DESKTOP TOP VIEW PREDOMINANT DIAGONAL + UNIFIED SESSION NOTES & OWNER CARE NOTES */}
-            <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-              {/* Desktop Top View Card (On mobile, Top View is accessed via the Segmented View Switcher above the fold) */}
-              <div className="hidden lg:block lg:col-span-6 rounded-xl border border-slate-300 bg-white p-5 shadow-xs space-y-3">
-                <div>
-                  <h2 className="text-sm font-semibold text-[#2B4C3F]">
-                    {t.topViewTitle}
-                  </h2>
-                  <p className="text-xs text-slate-600 mt-0.5">{t.step3Desc}</p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleSetPredominantDiagonalPreset('left_atlas', 'right_gluteal')
-                    }
-                    className="px-2.5 py-1.5 rounded-md border border-slate-300 bg-[#FAF9F6] hover:bg-[#2B4C3F]/10 font-medium text-[#1E2421] cursor-pointer"
-                  >
-                    Left Atlas → Right Gluteal
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleSetPredominantDiagonalPreset('right_atlas', 'left_gluteal')
-                    }
-                    className="px-2.5 py-1.5 rounded-md border border-slate-300 bg-[#FAF9F6] hover:bg-[#2B4C3F]/10 font-medium text-[#1E2421] cursor-pointer"
-                  >
-                    Right Atlas → Left Gluteal
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleSetPredominantDiagonalPreset('left_atlas', 'right_sacrum')
-                    }
-                    className="px-2.5 py-1.5 rounded-md border border-slate-300 bg-[#FAF9F6] hover:bg-[#2B4C3F]/10 font-medium text-[#1E2421] cursor-pointer"
-                  >
-                    Left Atlas → Right Sacrum
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleSetPredominantDiagonalPreset('right_atlas', 'left_sacrum')
-                    }
-                    className="px-2.5 py-1.5 rounded-md border border-slate-300 bg-[#FAF9F6] hover:bg-[#2B4C3F]/10 font-medium text-[#1E2421] cursor-pointer"
-                  >
-                    Right Atlas → Left Sacrum
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleUpdateAnnotations(
-                        activeSession.annotations.filter((a) => a.kind !== 'diagonal')
-                      )
-                    }
-                    className="px-2.5 py-1.5 rounded-md text-red-700 hover:bg-red-50 font-medium cursor-pointer ml-auto"
-                  >
-                    {t.clearView}
-                  </button>
-                </div>
-
-                <HorseSilhouetteSvg
-                  view="top"
-                  evaluationTable={activeSession.evaluationTable}
-                  annotations={activeSession.annotations}
-                  activeTool="select"
-                  activeColor={activeColor}
-                  selectedAnnotationId={selectedAnnotationId}
-                  onSelectAnnotation={setSelectedAnnotationId}
-                  onChangeAnnotations={handleUpdateAnnotations}
-                  onSelectDiagonalAnchors={handleSetPredominantDiagonalPreset}
-                  activeRegionFilter={activeRegionFilter}
-                  showPastelZones={showPastelZones}
-                  lang={lang}
-                />
-              </div>
-
-              {/* SINGLE UNIFIED NOTES FLOW: 1) Session Notes + 2) Owner Care Notes */}
-              <div className="lg:col-span-6 rounded-xl border border-slate-300 bg-white p-4 md:p-5 shadow-xs flex flex-col justify-between space-y-4">
-                {/* 1. Unified Session Notes */}
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="general-session-notes"
-                    className="block text-xs md:text-sm font-bold text-[#1E2421]"
-                  >
-                    {t.generalNotesLabel}
-                  </label>
-                  <textarea
-                    id="general-session-notes"
-                    data-testid="unified-session-notes-input"
-                    rows={4}
-                    value={unifiedSessionNotesValue}
-                    onChange={(e) =>
-                      void persistSessionUpdate({
-                        ...activeSession,
-                        generalNotes: e.target.value,
-                        manualVoiceNotes: '',
-                      })
-                    }
-                    placeholder={t.manualNotesPlaceholder}
-                    className="w-full rounded-xl border border-slate-300 bg-[#FAF9F6] p-3 text-xs text-slate-900 leading-relaxed focus:border-[#2B4C3F] focus:outline-none"
-                  />
-                </div>
-
-                {/* 2. Clearly Separated Owner Care Notes */}
-                <div className="space-y-1.5 pt-2 border-t border-slate-200">
-                  <label
-                    htmlFor="owner-care-notes"
-                    className="block text-xs md:text-sm font-bold text-amber-900"
-                  >
-                    {t.ownerCareNotesLabel}
-                  </label>
-                  <textarea
-                    id="owner-care-notes"
-                    data-testid="owner-care-notes-input"
-                    rows={3}
-                    value={ownerCareNotesValue}
-                    onChange={(e) =>
-                      void persistSessionUpdate(
-                        {
-                          ...activeSession,
-                          reportSections: {
-                            ...activeSession.reportSections,
-                            postSessionCareNotes: e.target.value,
-                          },
-                        },
-                        false
-                      )
-                    }
-                    placeholder={t.ownerCarePlaceholder}
-                    className="w-full rounded-xl border border-amber-300/90 bg-amber-50/40 p-3 text-xs text-slate-900 leading-relaxed focus:border-[#2B4C3F] focus:outline-none"
-                  />
-                </div>
-
-                <div className="pt-2 border-t border-slate-200 text-[11px] text-slate-500 leading-snug">
-                  {t.certDisclaimer}
-                </div>
-              </div>
-            </section>
-
-            {/* COLLAPSIBLE HORSE & SESSION METADATA SHEET HEADER CARD (Collapsed by default on mobile) */}
-            <section className="rounded-xl border border-slate-300 bg-white p-4 shadow-xs">
+            {/* Bottom Action Bar: Clean "View Session Summary & PDF" Button */}
+            <div className="pt-2 flex justify-center">
               <button
                 type="button"
-                data-testid="toggle-session-metadata-btn"
-                onClick={() => setIsSessionMetaExpanded((v) => !v)}
-                className="w-full flex items-center justify-between gap-3 text-left cursor-pointer"
+                data-testid="view-session-summary-pdf-btn"
+                onClick={() => {
+                  setActiveTab('horses');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="w-full sm:w-auto min-h-[48px] inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[#2B4C3F] hover:bg-[#223D32] text-white text-sm font-bold shadow-xs cursor-pointer transition-colors"
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-9 rounded-full border-2 border-[#2B4C3F] bg-[#FAF9F6] flex flex-col items-center justify-center shrink-0 text-[#2B4C3F]">
-                    <span className="text-[6.5px] font-bold tracking-widest uppercase">
-                      MASTERSON
-                    </span>
-                    <span className="text-[8px] font-serif font-bold">METHOD</span>
-                  </div>
-                  <div>
-                    <h2 className="text-sm md:text-base font-editorial font-bold text-[#1E2421]">
-                      {activeHorse.name} · {t.sessionNum} #{activeSession.sessionNumber} ({activeSession.date})
-                    </h2>
-                    <p className="text-xs text-slate-500">
-                      {lang === 'ru'
-                        ? 'Данные лошади, владельца и практика для отчета A4'
-                        : 'Horse profile, owner & practitioner details for A4 report'}
-                    </p>
-                  </div>
-                </div>
-                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#2B4C3F]">
-                  <span>
-                    {isSessionMetaExpanded
-                      ? lang === 'ru'
-                        ? 'Скрыть'
-                        : 'Hide'
-                      : lang === 'ru'
-                        ? 'Изменить поля'
-                        : 'Edit Details'}
-                  </span>
-                  {isSessionMetaExpanded ? (
-                    <ChevronUp className="w-4 h-4" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4" />
-                  )}
+                <FileText className="w-4 h-4" />
+                <span>
+                  {lang === 'ru'
+                    ? 'Просмотр сводки сессии и экспорт PDF'
+                    : 'View Session Summary & PDF'}
                 </span>
               </button>
-
-              {isSessionMetaExpanded && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-4 mt-3 border-t border-slate-200">
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                      {t.studentLabel}
-                    </label>
-                    <input
-                      type="text"
-                      value={activeSession.practitioner}
-                      onChange={(e) =>
-                        void persistSessionUpdate({
-                          ...activeSession,
-                          practitioner: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                      {t.caseStudyNum}
-                    </label>
-                    <input
-                      type="text"
-                      value={activeSession.caseStudyNumber}
-                      onChange={(e) =>
-                        void persistSessionUpdate({
-                          ...activeSession,
-                          caseStudyNumber: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-tabular font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                      {t.sessionNum}
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={activeSession.sessionNumber}
-                      onChange={(e) =>
-                        void persistSessionUpdate({
-                          ...activeSession,
-                          sessionNumber: Math.max(1, Number(e.target.value) || 1),
-                        })
-                      }
-                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-tabular font-bold text-[#1E3A8A] focus:border-[#2B4C3F] focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                      {t.dateLabel}
-                    </label>
-                    <input
-                      type="date"
-                      value={activeSession.date}
-                      onChange={(e) =>
-                        void persistSessionUpdate({
-                          ...activeSession,
-                          date: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-tabular font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                      {t.horseLabel}
-                    </label>
-                    <input
-                      type="text"
-                      value={activeHorse.name}
-                      onChange={(e) =>
-                        void persistHorseUpdate({
-                          ...activeHorse,
-                          name: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-semibold text-[#1E3A8A] focus:border-[#2B4C3F] focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                      {t.ageLabel}
-                    </label>
-                    <input
-                      type="text"
-                      value={activeHorse.age}
-                      onChange={(e) =>
-                        void persistHorseUpdate({
-                          ...activeHorse,
-                          age: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-tabular font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                      {t.breedLabel}
-                    </label>
-                    <input
-                      type="text"
-                      value={activeHorse.breed}
-                      onChange={(e) =>
-                        void persistHorseUpdate({
-                          ...activeHorse,
-                          breed: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                      {t.jobLabel}
-                    </label>
-                    <input
-                      type="text"
-                      value={activeHorse.job}
-                      onChange={(e) =>
-                        void persistHorseUpdate({
-                          ...activeHorse,
-                          job: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-semibold text-[#1E3A8A] focus:border-[#2B4C3F] focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                      {t.ownerLabel}
-                    </label>
-                    <input
-                      type="text"
-                      value={activeHorse.owner}
-                      onChange={(e) =>
-                        void persistHorseUpdate({
-                          ...activeHorse,
-                          owner: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                      {t.contactLabel}
-                    </label>
-                    <input
-                      type="text"
-                      value={activeHorse.contactInfo}
-                      onChange={(e) =>
-                        void persistHorseUpdate({
-                          ...activeHorse,
-                          contactInfo: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                      {t.durationLabel}
-                    </label>
-                    <input
-                      type="text"
-                      value={activeSession.duration}
-                      onChange={(e) =>
-                        void persistSessionUpdate({
-                          ...activeSession,
-                          duration: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-tabular font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                    />
-                  </div>
-                </div>
-              )}
-            </section>
+            </div>
           </div>
-        ) : activeTab === 'horses' ? (
-          /* TAB 2: HORSES, SESSIONS & JSON BACKUP */
+        ) : (
+          /* TAB 2: HORSES, SESSION HISTORY, EVALUATED ZONES BREAKDOWN, A4 PDF EXPORT & SETTINGS */
           <HorsesAndBackupView
             horses={horses}
             sessions={sessions}
@@ -1782,8 +1257,22 @@ export default function App() {
             lang={lang}
             onSelectHorseAndSession={(hId, sId) => {
               void handleSelectHorseAndSession(hId, sId);
-              setActiveTab('editor');
             }}
+            onEditSessionOnMap={(hId, sId) => {
+              void handleSelectHorseAndSession(hId, sId);
+              setActiveTab('editor');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onUpdateReportSections={(nextSections: ReportSections, customized: boolean) =>
+              void persistSessionUpdate(
+                {
+                  ...activeSession,
+                  reportSections: nextSections,
+                  reportCustomized: customized,
+                },
+                false
+              )
+            }
             onCreateHorse={handleCreateHorse}
             onUpdateHorse={persistHorseUpdate}
             onDeleteHorse={handleDeleteHorse}
@@ -1815,23 +1304,6 @@ export default function App() {
               const models = await db.whisperModels.toArray();
               setInstalledModels(models);
             }}
-          />
-        ) : (
-          /* TAB 3: STRUCTURED REPORT & GENUINE OFFLINE A4 PDF EXPORT */
-          <SessionReportAndPdfView
-            horse={activeHorse}
-            session={activeSession}
-            lang={lang}
-            onUpdateReportSections={(nextSections: ReportSections, customized: boolean) =>
-              void persistSessionUpdate(
-                {
-                  ...activeSession,
-                  reportSections: nextSections,
-                  reportCustomized: customized,
-                },
-                false
-              )
-            }
           />
         )}
       </main>
