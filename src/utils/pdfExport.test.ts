@@ -28,6 +28,7 @@ import {
 } from './photoTestFixtures';
 import { buildReportFromSession, getUnifiedSessionNotes } from './reportGenerator';
 import { buildPdfFileName, generateSessionPdfBytes, groupPhotosForPdf } from './pdfExport';
+import { PDF_PRESETS } from './pdfExportOptions';
 
 /** Extracts PDF text with poppler's pdftotext; returns null when the tool is unavailable. */
 function extractPdfText(bytes: Uint8Array): string | null {
@@ -123,16 +124,16 @@ function makeTestFixtures(): { horse: HorseProfile; session: BodyworkSession } {
 }
 
 describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF Export', () => {
-  it('partitions all 19 anatomical areas into 5 body-part filters (All: 19, Head: 4, Torso: 8, Front: 4, Hind: 3)', () => {
+  it('partitions all 21 anatomical areas into 5 body-part filters (All: 21, Head: 4, Torso: 9, Front: 4, Hind: 4)', () => {
     assert.equal(BODY_PART_FILTERS.length, 5);
     assert.deepEqual(
       BODY_PART_FILTERS.map((f) => ({ id: f.id, count: f.areaIds.length })),
       [
-        { id: 'all', count: 19 },
+        { id: 'all', count: 21 },
         { id: 'head', count: 4 },
-        { id: 'torso', count: 8 },
+        { id: 'torso', count: 9 },
         { id: 'front', count: 4 },
-        { id: 'hind', count: 3 },
+        { id: 'hind', count: 4 },
       ]
     );
     assert.equal(matchesBodyPartFilter('poll_front_atlas', 'head'), true);
@@ -145,25 +146,30 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
     assert.equal(matchesBodyPartFilter('hamstrings', 'hind'), true);
     assert.equal(matchesBodyPartFilter('hind_fetlock', 'hind'), true);
     assert.equal(matchesBodyPartFilter('hind_fetlock', 'all'), true);
+    assert.equal(matchesBodyPartFilter('tuber_coxae', 'torso'), true);
+    assert.equal(matchesBodyPartFilter('under_tail', 'hind'), true);
+    assert.equal(matchesBodyPartFilter('under_tail', 'torso'), false);
   });
 
-  it('partitions all 19 anatomical areas into 3 interactive body segments (Head & Neck: 4, Torso & Pelvis: 8, Limbs & Hooves: 7)', () => {
+  it('partitions all 21 anatomical areas into 3 interactive body segments (Head & Neck: 4, Torso & Pelvis: 9, Limbs & Hooves: 8)', () => {
     assert.equal(BODY_SEGMENTS.length, 3);
     assert.deepEqual(
       BODY_SEGMENTS.map((s) => ({ id: s.id, count: s.areaIds.length })),
       [
         { id: 'head_neck', count: 4 },
-        { id: 'torso_pelvis', count: 8 },
-        { id: 'limbs', count: 7 },
+        { id: 'torso_pelvis', count: 9 },
+        { id: 'limbs', count: 8 },
       ]
     );
     const allGroupedIds = BODY_SEGMENTS.flatMap((s) => s.areaIds);
-    assert.equal(allGroupedIds.length, 19);
-    assert.equal(new Set(allGroupedIds).size, 19);
+    assert.equal(allGroupedIds.length, 21);
+    assert.equal(new Set(allGroupedIds).size, 21);
     assert.equal(getBodySegmentForArea('poll_front_atlas'), 'head_neck');
     assert.equal(getBodySegmentForArea('saddle_outline'), 'torso_pelvis');
     assert.equal(getBodySegmentForArea('hoof_point'), 'limbs');
     assert.equal(getBodySegmentForArea('hind_fetlock'), 'limbs');
+    assert.equal(getBodySegmentForArea('tuber_coxae'), 'torso_pelvis');
+    assert.equal(getBodySegmentForArea('under_tail'), 'limbs');
   });
 
   it('defines all 8 quick release chips, 6 additional release signs, 5 resistance signs, and 12 Masterson techniques', () => {
@@ -377,6 +383,115 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
       }
       assert.ok(!text.includes('\uFFFD'));
     }
+  });
+
+  it('keeps zone indices 1–21 stable and handles sessions saved before #20/#21 existed', async () => {
+    assert.deepEqual(
+      ANATOMICAL_AREAS.map((a) => a.index),
+      Array.from({ length: 21 }, (_, i) => i + 1)
+    );
+    assert.equal(ANATOMICAL_AREAS[19].id, 'tuber_coxae');
+    assert.equal(ANATOMICAL_AREAS[20].id, 'under_tail');
+
+    // Old session: evaluation table has no rows for the new zones
+    const { horse, session } = makeTestFixtures();
+    const legacyTable = { ...session.evaluationTable } as Partial<BodyworkSession['evaluationTable']>;
+    delete legacyTable.tuber_coxae;
+    delete legacyTable.under_tail;
+    const legacy = {
+      ...session,
+      evaluationTable: legacyTable as BodyworkSession['evaluationTable'],
+    };
+    assert.doesNotThrow(() => buildReportFromSession(legacy, 'en'));
+    const bytes = await generateSessionPdfBytes(horse, legacy, 'en');
+    assert.equal((await PDFDocument.load(bytes)).getPageCount(), 2);
+
+    // New zones marked → appear in the PDF table and landmark key
+    session.evaluationTable.tuber_coxae.left = {
+      ...session.evaluationTable.tuber_coxae.left,
+      reaction: 2,
+    };
+    session.evaluationTable.under_tail.right = {
+      ...session.evaluationTable.under_tail.right,
+      restriction: true,
+    };
+    const marked = await generateSessionPdfBytes(horse, session, 'en');
+    assert.equal((await PDFDocument.load(marked)).getPageCount(), 2);
+    const text = extractPdfText(marked);
+    if (text !== null) {
+      assert.ok(text.includes('Anatomical Landmarks Key (1–21)'));
+      assert.ok(text.includes('20. Hip Point (Tuber Coxae)'));
+      assert.ok(text.includes('21. Under-the-Tail (Tuber Ischii)'));
+    }
+  });
+
+  it('includes only the selected sections (owner vs specialist presets and single toggles)', async () => {
+    const { horse, session } = makeTestFixtures();
+    session.evaluationTable.under_tail.left = { ...session.evaluationTable.under_tail.left, reaction: 1 };
+    session.generalNotes = 'Practitioner remark NOTES-MARK-91';
+    session.reportSections = { ...session.reportSections, postSessionCareNotes: 'Walk daily CARE-MARK-44' };
+
+    const owner = await generateSessionPdfBytes(horse, session, 'en', [], PDF_PRESETS.owner);
+    const specialist = await generateSessionPdfBytes(horse, session, 'en', [], PDF_PRESETS.specialist);
+    assert.equal((await PDFDocument.load(owner)).getPageCount(), 2);
+    assert.ok((await PDFDocument.load(specialist)).getPageCount() >= 2);
+
+    const ownerText = extractPdfText(owner);
+    const specText = extractPdfText(specialist);
+    if (ownerText !== null && specText !== null) {
+      assert.ok(!ownerText.includes('Myofascial Kinetic Lines'));
+      assert.ok(!ownerText.includes('Masterson Work Plan'));
+      assert.ok(ownerText.includes('NOTES-MARK-91') && ownerText.includes('CARE-MARK-44'));
+
+      assert.ok(specText.includes('Myofascial Kinetic Lines'));
+      assert.match(specText, /SDL — Superficial Dorsal Line: \d+ of \d+ zones marked/);
+      assert.ok(specText.includes('Masterson Work Plan'));
+      assert.ok(specText.includes('Under-the-Tail Point'));
+      assert.ok(specText.includes('veterinary exam'));
+    }
+
+    const ru = extractPdfText(await generateSessionPdfBytes(horse, session, 'ru', [], PDF_PRESETS.specialist));
+    if (ru !== null) {
+      assert.match(ru, /SDL — Поверхностная дорсальная линия: отмечено \d+ из \d+ зон/);
+      assert.ok(ru.includes('План работы по Мастерсону'));
+    }
+
+    const noNotes = extractPdfText(
+      await generateSessionPdfBytes(horse, session, 'en', [], { ...PDF_PRESETS.owner, notes: false, ownerCare: false })
+    );
+    if (noNotes !== null) {
+      assert.ok(!noNotes.includes('NOTES-MARK-91'));
+      assert.ok(!noNotes.includes('CARE-MARK-44'));
+    }
+
+    const noProtocol = extractPdfText(
+      await generateSessionPdfBytes(horse, session, 'en', [], { ...PDF_PRESETS.owner, protocol: false })
+    );
+    if (noProtocol !== null) {
+      assert.ok(!noProtocol.includes('Evaluated Anatomical Areas'));
+      assert.ok(noProtocol.includes('SESSION NOTES —'));
+      // Page 1 map and key stay
+      assert.ok(noProtocol.includes('Anatomical Landmarks Key (1–21)'));
+    }
+
+    const photos: SessionPhoto[] = [
+      {
+        id: 'ph-1',
+        sessionId: session.id,
+        kind: 'before',
+        createdAt: '2026-04-17T10:05:00.000Z',
+        width: 48,
+        height: 32,
+        mimeType: 'image/jpeg',
+        sizeBytes: 800,
+        imageDataUrl: TEST_JPEG_LANDSCAPE_DATA_URL,
+      },
+    ];
+    const withPhotos = await generateSessionPdfBytes(horse, session, 'en', photos, PDF_PRESETS.owner);
+    const photosOff = await generateSessionPdfBytes(horse, session, 'en', photos, { ...PDF_PRESETS.owner, photos: false });
+    assert.ok(withPhotos.byteLength > photosOff.byteLength, 'photo band omitted when photos are off');
+    const photosOffText = extractPdfText(photosOff);
+    if (photosOffText !== null) assert.ok(!photosOffText.includes('Photos: Before & After'));
   });
 
   it('groups photos by kind, oldest first, max two per kind', () => {

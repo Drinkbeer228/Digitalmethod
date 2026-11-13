@@ -19,7 +19,9 @@ export type AnatomicalAreaId =
   | 'knee'
   | 'front_fetlock'
   | 'hock'
-  | 'hind_fetlock';
+  | 'hind_fetlock'
+  | 'tuber_coxae'
+  | 'under_tail';
 
 export type AnatomicalRegionId =
   | 'head_poll'

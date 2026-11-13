@@ -27,6 +27,7 @@ import {
   shareOrDownloadPdfFile,
   triggerPdfFileDownload,
 } from '../utils/pdfExport';
+import { PdfExportOptionsPanel, usePdfExportOptions } from './PdfExportOptionsPanel';
 import {
   Check,
   ChevronDown,
@@ -108,6 +109,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [exportStatusMsg, setExportStatusMsg] = useState<string | null>(null);
   const [showNarrativeSections, setShowNarrativeSections] = useState(false);
+  const [pdfOptions, setPdfOptions] = usePdfExportOptions();
 
   // Pre-build the unified A4 PDF File in the background whenever horse/session/lang changes
   // so Web Share API on iOS Safari can be invoked synchronously inside the tap gesture.
@@ -116,7 +118,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
     setPreBuiltPdfFile(null);
     void (async () => {
       try {
-        const file = await buildSessionPdfFile(horse, session, lang, photos);
+        const file = await buildSessionPdfFile(horse, session, lang, photos, pdfOptions);
         if (!cancelled) {
           setPreBuiltPdfFile(file);
         }
@@ -127,7 +129,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
     return () => {
       cancelled = true;
     };
-  }, [horse, session, lang, photos]);
+  }, [horse, session, lang, photos, pdfOptions]);
 
   const handleSyncFromEvaluation = () => {
     const generated = buildReportFromSession(session, lang);
@@ -149,7 +151,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
       setIsGeneratingPdf(true);
       const pdfFile =
         preBuiltPdfFile ??
-        (await buildSessionPdfFile(horse, session, lang, photos));
+        (await buildSessionPdfFile(horse, session, lang, photos, pdfOptions));
       const outcome = await shareOrDownloadPdfFile(
         pdfFile,
         `Masterson Method Report — ${horse.name}`
@@ -178,7 +180,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
       setIsGeneratingPdf(true);
       const pdfFile =
         preBuiltPdfFile ??
-        (await buildSessionPdfFile(horse, session, lang, photos));
+        (await buildSessionPdfFile(horse, session, lang, photos, pdfOptions));
       triggerPdfFileDownload(pdfFile);
       setExportStatusMsg(
         lang === 'ru' ? `Скачан файл ${pdfFile.name}` : `Downloaded ${pdfFile.name}`
@@ -321,6 +323,16 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
             <Printer className="w-3.5 h-3.5" />
           </button>
         </div>
+      </div>
+
+      {/* PDF sections: presets + checkboxes; the pre-built PDF follows the choice */}
+      <div className="no-print">
+        <PdfExportOptionsPanel
+          options={pdfOptions}
+          onChange={setPdfOptions}
+          lang={lang}
+          hasPhotos={photos.length > 0}
+        />
       </div>
 
       {/* Mobile: the share action stays anchored at the bottom, within thumb reach */}

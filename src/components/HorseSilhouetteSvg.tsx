@@ -722,7 +722,7 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
           </g>
         )}
 
-        {/* LAYER 5 (Left/Right): 19 Independent Transparent Interactive Hit Targets */}
+        {/* LAYER 5 (Left/Right): Independent Transparent Interactive Hit Targets */}
         {view !== 'top' && !readOnly && (
           <g data-testid={`layer-hit-targets-${view}`}>
             {ANATOMICAL_AREAS.map((area) => {

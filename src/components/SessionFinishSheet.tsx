@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { BodyworkSession, HorseProfile, Language, SessionPhoto } from '../types';
 import { buildSessionPdfFile, shareOrDownloadPdfFile } from '../utils/pdfExport';
 import { countMarkedZoneSides } from '../utils/zoneEditing';
+import { PdfExportOptionsPanel, usePdfExportOptions } from './PdfExportOptionsPanel';
 import { AlertTriangle, Check, FileText, Loader2, RotateCw, Share2 } from 'lucide-react';
 
 const NO_PHOTOS: SessionPhoto[] = [];
@@ -39,12 +40,13 @@ export const SessionFinishSheet: React.FC<SessionFinishSheetProps> = ({
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [shareMsg, setShareMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pdfOptions, setPdfOptions] = usePdfExportOptions();
 
   useEffect(() => {
     if (phase !== 'saved') return undefined;
     let cancelled = false;
     setPdfFile(null);
-    void buildSessionPdfFile(horse, session, lang, photos)
+    void buildSessionPdfFile(horse, session, lang, photos, pdfOptions)
       .then((file) => {
         if (!cancelled) setPdfFile(file);
       })
@@ -52,13 +54,13 @@ export const SessionFinishSheet: React.FC<SessionFinishSheetProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [phase, horse, session, lang, photos]);
+  }, [phase, horse, session, lang, photos, pdfOptions]);
 
   const handleShare = async () => {
     setIsSharing(true);
     setShareMsg(null);
     try {
-      const file = pdfFile ?? (await buildSessionPdfFile(horse, session, lang, photos));
+      const file = pdfFile ?? (await buildSessionPdfFile(horse, session, lang, photos, pdfOptions));
       const outcome = await shareOrDownloadPdfFile(
         file,
         `${horse.name} — #${session.sessionNumber}`
@@ -178,6 +180,13 @@ export const SessionFinishSheet: React.FC<SessionFinishSheetProps> = ({
                 {shareMsg.text}
               </div>
             )}
+
+            <PdfExportOptionsPanel
+              options={pdfOptions}
+              onChange={setPdfOptions}
+              lang={lang}
+              hasPhotos={photos.length > 0}
+            />
 
             <button
               type="button"
