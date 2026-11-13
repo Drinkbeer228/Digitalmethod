@@ -1,4 +1,4 @@
-const CACHE_NAME = 'masterson-case-digital-offline-v7';
+const CACHE_NAME = 'masterson-case-digital-offline-v8';
 
 const CORE_PRECACHE_URLS = [
   '/',
