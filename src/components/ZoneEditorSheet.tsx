@@ -19,6 +19,7 @@ import {
   TRANSLATIONS,
 } from '../data/translations';
 import { getAdjacentAreaId, toggleSignChip } from '../utils/zoneEditing';
+import { ZoneReferencePanel } from './ZoneReferencePanel';
 import {
   Check,
   ChevronDown,
@@ -397,6 +398,9 @@ export const ZoneEditorSheet: React.FC<ZoneEditorSheetProps> = ({
             >
               {ru ? area.explanationRu : area.explanationEn}
             </p>
+          )}
+          {showInfo && (
+            <ZoneReferencePanel areaId={areaId} tableState={tableState} lang={lang} />
           )}
         </div>
 
