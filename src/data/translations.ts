@@ -3,11 +3,11 @@ import { Language } from '../types';
 export const TRANSLATIONS: Record<Language, Record<string, string>> = {
   en: {
     appName: 'Masterson Case Digital',
-    navCaseEditor: 'Case Study Editor',
+    navCaseEditor: 'Evaluation',
     navHorses: 'Horses & Sessions',
     navVoice: 'Voice & Whisper',
     navReport: 'Report & PDF',
-    navBackup: 'Storage & Backup',
+    navBackup: 'Backup',
     newSession: '+ New Session',
     newHorse: '+ New Horse',
     demoBadge: 'Demonstration Case (Unverified Example)',
@@ -25,7 +25,8 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     ownerLabel: 'Owner',
     contactLabel: 'Contact Info',
     durationLabel: 'Session Duration',
-    generalNotesLabel: 'General Session Notes',
+    generalNotesLabel: 'Session Notes (Clinical Observations & Transcripts)',
+    ownerCareNotesLabel: 'Owner Care Notes (Post-Session Recommendations)',
     step1Title: 'Step 1 – Initial Evaluation:',
     step1Desc:
       'Mark Reactions to Palpation (current issue) with lines. Visually differentiate levels of reactivity to palpation as follows:',
@@ -54,30 +55,37 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     none: 'None',
     restrictionObserved: 'Restriction Observed (Older Issue)',
     releaseObserved: 'Released / Release Signs Observed',
-    observationNote: 'Short Area Note',
-    releaseSignsLabel: 'Release Signs',
+    observationNote: 'Area Note',
+    releaseSignsLabel: 'Quick Response & Release Chips (SRSR)',
+    moreTaxonomyLabel: '+ More / Resistance / Technique',
+    additionalReleasesLabel: 'Additional Subtle & Release Signs',
+    resistanceSignsLabel: 'Resistance / Guarding Signs',
+    techniquesUsedLabel: 'Masterson Techniques Used',
     saveClose: 'Done',
-    clearCell: 'Clear Cell',
-    voiceTitle: 'Offline Voice Notes & Local Whisper Transcription',
+    clearCell: 'Clear Area',
+    voiceTitle: 'Audio Clips & Local Whisper Transcription',
     voiceSubtitle:
-      'All audio recording, Whisper speech recognition, and note parsing run 100% locally on this device.',
-    startRecording: 'Start Recording',
+      'All audio recording, crash-safe chunk recovery, and Whisper speech recognition run 100% locally on this device.',
+    startRecording: 'Record',
     pauseRecording: 'Pause',
     resumeRecording: 'Resume',
-    stopRecording: 'Stop & Save Clip',
+    stopRecording: 'Stop',
     transcribeClip: 'Transcribe Locally',
-    parseTranscript: 'Analyze & Suggest Table Entries',
-    manualNotesTitle: 'Manual Voice / Field Notes',
+    parseTranscript: 'Suggest Map Marks from Transcript',
+    appendTranscriptBtn: 'Append to Session Notes',
+    manualNotesTitle: 'Session Notes',
     manualNotesPlaceholder:
-      'Type or dictate observations in English or Russian (e.g., "Left shoulder reaction level 2, restriction in right gluteals, deep yawning and head lowering...")',
-    analyzeManualNotes: 'Extract Suggestions from Notes',
-    suggestionsTitle: 'Assisted Case Completion — Proposed Changes',
+      'Type or append transcribed observations in English or Russian (e.g., "Left shoulder reaction level 2, restriction in right gluteals, deep yawning and head drop...")',
+    ownerCarePlaceholder:
+      'Post-session care, hand-walking, turnout, or riding recommendations for the horse owner...',
+    analyzeManualNotes: 'Extract Suggestions from Transcript',
+    suggestionsTitle: 'Transcript Map Suggestions',
     suggestionsSubtitle:
-      'Review transparent local rule matches below. Nothing is applied until you explicitly confirm.',
+      'Review proposed map marks below. Nothing is applied until you tap Accept.',
     acceptSuggestion: 'Accept',
-    rejectSuggestion: 'Reject',
-    acceptAll: 'Accept All Validated',
-    noSuggestions: 'No pending suggestions. Record a clip or enter notes above and click Analyze.',
+    rejectSuggestion: 'Dismiss',
+    acceptAll: 'Accept All',
+    noSuggestions: 'No suggestions detected in this transcript.',
     whisperSettingsTitle: 'Local Whisper Model Installation & Management',
     downloadModelBtn: 'Download model once for offline use',
     importModelBtn: 'Import local ONNX model files',
@@ -90,18 +98,18 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     activeModelBadge: 'Active Model',
     reportModeCert: 'Certification Mode',
     reportModeOwner: 'Owner Report Mode',
-    printPdfBtn: 'Print / Export A4 PDF',
-    regenerateReportBtn: 'Sync Summary from Table & Notes',
+    printPdfBtn: 'Save / Share A4 PDF',
+    regenerateReportBtn: 'Sync Summary from Map & Notes',
     sec1Title: '1. Initial Evaluation & Reactions (Direct Observations)',
     sec2Title: '2. Restrictions Identified (Direct Observations)',
-    sec3Title: '3. Release Signs Observed (Direct Observations)',
+    sec3Title: '3. Response, Release & Guarding Signs (Direct Observations)',
     sec4Title: '4. Predominant Diagonal (Practitioner Interpretation)',
     sec5Title: '5. Session Notes & Techniques Used (Practitioner Interpretation)',
-    sec6Title: '6. Post-Session Care Notes (Practitioner Recommendations)',
+    sec6Title: '6. Owner Care Notes (Post-Session Recommendations)',
     certDisclaimer:
       'FOR STUDENT LEARNING PURPOSES ONLY: This is not a veterinary assessment and is not for owner use. The purpose of the Masterson Method is to improve movement, performance, and well-being in the healthy horse. A VETERINARIAN SHOULD BE CONSULTED IF THERE ARE ANY PHYSICAL CONCERNS WITH THE HORSE.',
     ownerHeaderNote:
-      'Equine Bodywork Session Summary prepared for the horse owner. Contains direct session observations and post-session care notes.',
+      'Equine Bodywork Session Summary prepared for the horse owner. Contains direct session observations and post-session care recommendations.',
     exportJsonBtn: 'Export Full JSON Backup',
     importJsonBtn: 'Restore from JSON Backup',
     autoSaveStatus: 'Saved locally in IndexedDB',
@@ -109,11 +117,11 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
   },
   ru: {
     appName: 'Masterson Case Digital',
-    navCaseEditor: 'Карта оценки',
+    navCaseEditor: 'Оценка',
     navHorses: 'Лошади и сессии',
     navVoice: 'Голос и Whisper',
-    navReport: 'Отчет и PDF (A4)',
-    navBackup: 'Хранилище и копии',
+    navReport: 'Отчет и PDF',
+    navBackup: 'Резервная копия',
     newSession: '+ Новая сессия',
     newHorse: '+ Новая лошадь',
     demoBadge: 'Демонстрационный кейс (учебный пример)',
@@ -131,7 +139,8 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     ownerLabel: 'Владелец',
     contactLabel: 'Контакты',
     durationLabel: 'Длительность',
-    generalNotesLabel: 'Общие заметки по сессии',
+    generalNotesLabel: 'Заметки по сессии (Наблюдения и транскрипты)',
+    ownerCareNotesLabel: 'Рекомендации владельцу (Уход после сессии)',
     step1Title: 'Шаг 1 – Первичная оценка:',
     step1Desc:
       'Отметьте Реакции на пальпацию (текущие проблемы) линиями. Визуально различайте уровни реактивности: 1 (тонкая) 2 (жирная) 3 (зигзаг).',
@@ -160,30 +169,37 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     none: 'Нет',
     restrictionObserved: 'Обнаружена рестрикция (закрепощение)',
     releaseObserved: 'Релиз / Признаки расслабления',
-    observationNote: 'Краткая заметка по зоне',
-    releaseSignsLabel: 'Признаки релиза',
+    observationNote: 'Заметка по зоне',
+    releaseSignsLabel: 'Быстрые признаки ответа и релиза (SRSR)',
+    moreTaxonomyLabel: '+ Ещё / Сопротивление / Техники',
+    additionalReleasesLabel: 'Дополнительные признаки ответа и релиза',
+    resistanceSignsLabel: 'Признаки сопротивления / зажатости',
+    techniquesUsedLabel: 'Использованные техники Masterson Method',
     saveClose: 'Готово',
-    clearCell: 'Очистить ячейку',
-    voiceTitle: 'Офлайн диктофон и локальная транскрибация Whisper',
+    clearCell: 'Очистить зону',
+    voiceTitle: 'Аудиозаписи и локальная транскрибация Whisper',
     voiceSubtitle:
-      'Запись аудио, распознавание речи Whisper (RU/EN) и разбор заметок выполняются на 100% локально на устройстве.',
-    startRecording: 'Начать запись',
+      'Запись аудио, защита от сбоев и распознавание речи Whisper (RU/EN) выполняются на 100% локально на устройстве.',
+    startRecording: 'Запись',
     pauseRecording: 'Пауза',
     resumeRecording: 'Продолжить',
-    stopRecording: 'Остановить и сохранить',
+    stopRecording: 'Стоп',
     transcribeClip: 'Распознать локально',
-    parseTranscript: 'Разобрать и предложить записи',
-    manualNotesTitle: 'Текстовые и полевые заметки',
+    parseTranscript: 'Предложить отметки из текста',
+    appendTranscriptBtn: 'Добавить в заметки сессии',
+    manualNotesTitle: 'Заметки по сессии',
     manualNotesPlaceholder:
-      'Введите или надиктуйте наблюдения на русском или английском (напр.: "Левое плечо реакция 2, рестрикция правая ягодичная, глубокое зевание и опускание головы...")',
-    analyzeManualNotes: 'Извлечь предложения из заметок',
-    suggestionsTitle: 'Помощник заполнения кейса — Предлагаемые изменения',
+      'Введите или добавьте распознанные наблюдения на русском или английском (напр.: "Левое плечо реакция 2, рестрикция правая ягодичная, зевание и опускание головы...")',
+    ownerCarePlaceholder:
+      'Рекомендации владельцу после сессии: шаговка в руках, выгул, режим работы...',
+    analyzeManualNotes: 'Предложить отметки из транскрипта',
+    suggestionsTitle: 'Предлагаемые отметки из транскрипта',
     suggestionsSubtitle:
-      'Проверьте найденные совпадения. Никакие данные не вносятся без вашего подтверждения.',
+      'Проверьте найденные совпадения. Данные вносятся только после нажатия Принять.',
     acceptSuggestion: 'Принять',
-    rejectSuggestion: 'Отклонить',
-    acceptAll: 'Принять все проверенные',
-    noSuggestions: 'Нет ожидающих предложений. Запишите аудио или введите заметку выше и нажмите Разобрать.',
+    rejectSuggestion: 'Скрыть',
+    acceptAll: 'Принять все',
+    noSuggestions: 'В этом транскрипте совпадений не найдено.',
     whisperSettingsTitle: 'Установка и управление локальными моделями Whisper',
     downloadModelBtn: 'Download model once for offline use',
     importModelBtn: 'Import local ONNX model files',
@@ -196,14 +212,14 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     activeModelBadge: 'Активная модель',
     reportModeCert: 'Режим сертификации',
     reportModeOwner: 'Отчет для владельца',
-    printPdfBtn: 'Печать / Экспорт A4 PDF',
-    regenerateReportBtn: 'Синхронизировать сводку из таблицы',
+    printPdfBtn: 'Сохранить / Поделиться A4 PDF',
+    regenerateReportBtn: 'Обновить сводку из карты и заметок',
     sec1Title: '1. Первичная оценка и реакции (Прямые наблюдения)',
     sec2Title: '2. Выявленные рестрикции (Прямые наблюдения)',
-    sec3Title: '3. Наблюдаемые признаки релиза (Прямые наблюдения)',
+    sec3Title: '3. Признаки ответа, релиза и сопротивления (Прямые наблюдения)',
     sec4Title: '4. Преобладающая диагональ (Интерпретация практика)',
     sec5Title: '5. Заметки по сессии и техники (Интерпретация практика)',
-    sec6Title: '6. Рекомендации после сессии (Рекомендации практика)',
+    sec6Title: '6. Рекомендации владельцу после сессии (Рекомендации практика)',
     certDisclaimer:
       'ТОЛЬКО ДЛЯ УЧЕБНЫХ ЦЕЛЕЙ СТУДЕНТОВ: Данный документ не является ветеринарным заключением и не предназначен для использования владельцем. Цель метода Мастерсона — улучшение движений, работоспособности и благополучия здоровой лошади. ПРИ ЛЮБЫХ ФИЗИЧЕСКИХ ПРОБЛЕМАХ НЕОБХОДИМО ОБРАТИТЬСЯ К ВЕТЕРИНАРНОМУ ВРАЧУ.',
     ownerHeaderNote:
@@ -215,11 +231,274 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
   },
 };
 
-export const RELEASE_SIGNS_PRESETS: Array<{ id: string; en: string; ru: string }> = [
-  { id: 'yawning', en: 'Deep yawning', ru: 'Глубокое зевание (Deep yawning)' },
-  { id: 'head_lowering', en: 'Head lowering', ru: 'Опускание головы (Head lowering)' },
-  { id: 'licking_chewing', en: 'Licking & chewing', ru: 'Облизывание и отжевывание (Licking & chewing)' },
-  { id: 'blinking', en: 'Soft blinking', ru: 'Мягкое моргание (Soft blinking)' },
-  { id: 'sighing', en: 'Deep sigh / exhalation', ru: 'Глубокий выдох (Deep sigh)' },
-  { id: 'shaking', en: 'Whole-body shake', ru: 'Отряхивание всем телом (Body shake)' },
+export interface TaxonomyChipItem {
+  id: string;
+  en: string;
+  ru: string;
+  category?: 'subtle' | 'pre_release' | 'release' | 'resistance' | 'technique';
+  supportsCounter?: boolean;
+}
+
+/**
+ * 8 Always-Visible Quick Response/Release Chips (1-tap toggle in Bottom Sheet)
+ */
+export const QUICK_RELEASE_CHIPS: TaxonomyChipItem[] = [
+  {
+    id: 'blink_soft_eye',
+    en: 'Blink / Soft eye',
+    ru: 'Моргание / Мягкий глаз',
+    category: 'subtle',
+  },
+  {
+    id: 'lip_twitch',
+    en: 'Lip twitch',
+    ru: 'Подергивание губы',
+    category: 'subtle',
+  },
+  {
+    id: 'fidgeting',
+    en: 'Fidgeting',
+    ru: 'Суетливость (перед релизом)',
+    category: 'pre_release',
+  },
+  {
+    id: 'lick_chew',
+    en: 'Lick & chew',
+    ru: 'Облизывание и отжевывание',
+    category: 'release',
+  },
+  {
+    id: 'yawn',
+    en: 'Yawn',
+    ru: 'Зевание',
+    category: 'release',
+    supportsCounter: true,
+  },
+  {
+    id: 'snort_sneeze',
+    en: 'Snort / Sneeze',
+    ru: 'Отфыркивание / Чих',
+    category: 'release',
+  },
+  {
+    id: 'head_drop',
+    en: 'Head drop',
+    ru: 'Опускание головы',
+    category: 'release',
+  },
+  {
+    id: 'deep_sigh_shake',
+    en: 'Deep sigh / Shake',
+    ru: 'Глубокий выдох / Встряхивание',
+    category: 'release',
+  },
 ];
+
+/**
+ * Additional Subtle & Release Signs inside collapsible "+ More / Resistance / Technique"
+ */
+export const MORE_RELEASE_SIGNS: TaxonomyChipItem[] = [
+  {
+    id: 'weight_shift',
+    en: 'Weight shift',
+    ru: 'Перенос веса',
+    category: 'subtle',
+  },
+  {
+    id: 'rest_hind_leg',
+    en: 'Rest hind leg',
+    ru: 'Постановка задней ноги на зацеп',
+    category: 'subtle',
+  },
+  {
+    id: 'breath_shift_swallow',
+    en: 'Breath shift / Swallow',
+    ru: 'Изменение дыхания / Глотание',
+    category: 'subtle',
+  },
+  {
+    id: 'self_stretch_scratch',
+    en: 'Self-stretch / Scratch',
+    ru: 'Потягивание / Почесывание',
+    category: 'release',
+  },
+  {
+    id: 'seeking_contact',
+    en: 'Seeking contact',
+    ru: 'Поиск контакта',
+    category: 'release',
+  },
+  {
+    id: 'gut_sounds_gi',
+    en: 'Gut sounds (GI)',
+    ru: 'Перистальтика (ЖКТ)',
+    category: 'release',
+  },
+];
+
+/**
+ * Resistance / Guarding Signs inside collapsible "+ More / Resistance / Technique"
+ */
+export const RESISTANCE_SIGNS: TaxonomyChipItem[] = [
+  {
+    id: 'bracing_guarding',
+    en: 'Bracing / Guarding',
+    ru: 'Зажатость / Охрана зоны',
+    category: 'resistance',
+  },
+  {
+    id: 'ears_pinned',
+    en: 'Ears pinned',
+    ru: 'Прижатые уши',
+    category: 'resistance',
+  },
+  {
+    id: 'head_toss_pull_away',
+    en: 'Head toss / Pull away',
+    ru: 'Вскидывание головы / Уход от контакта',
+    category: 'resistance',
+  },
+  {
+    id: 'tail_clamp_swish',
+    en: 'Tail clamp / swish',
+    ru: 'Зажатие / Отмахивание хвостом',
+    category: 'resistance',
+  },
+  {
+    id: 'stepping_away_pawing',
+    en: 'Stepping away / Pawing',
+    ru: 'Отшагивание / Копание ногой',
+    category: 'resistance',
+  },
+];
+
+/**
+ * Masterson Techniques Used inside collapsible "+ More / Resistance / Technique"
+ */
+export const MASTERSON_TECHNIQUES: TaxonomyChipItem[] = [
+  {
+    id: 'bladder_meridian',
+    en: 'Bladder Meridian',
+    ru: 'Меридиан мочевого пузыря (Bladder Meridian)',
+    category: 'technique',
+  },
+  {
+    id: 'poll_atlas',
+    en: 'Poll / Atlas',
+    ru: 'Затылок / Атлант (Poll / Atlas)',
+    category: 'technique',
+  },
+  {
+    id: 'lateral_cervical_flexion',
+    en: 'Lateral Cervical Flexion',
+    ru: 'Боковое сгибание шеи (LCF)',
+    category: 'technique',
+  },
+  {
+    id: 'tmj_tongue_release',
+    en: 'TMJ / Tongue Release',
+    ru: 'Релиз ВНЧС / языка (TMJ / Tongue)',
+    category: 'technique',
+  },
+  {
+    id: 'under_scapula',
+    en: 'Under Scapula',
+    ru: 'Под лопаткой (Under Scapula)',
+    category: 'technique',
+  },
+  {
+    id: 'withers_wiggle',
+    en: 'Withers Wiggle',
+    ru: 'Покачивание холки (Withers Wiggle)',
+    category: 'technique',
+  },
+  {
+    id: 'lateral_diagonal_rocking',
+    en: 'Lateral / Diagonal Rocking',
+    ru: 'Боковое / диагональное раскачивание',
+    category: 'technique',
+  },
+  {
+    id: 'sternum_lift',
+    en: 'Sternum Lift',
+    ru: 'Подъем грудины (Sternum Lift)',
+    category: 'technique',
+  },
+  {
+    id: 'hind_end_points',
+    en: 'Hind End Points',
+    ru: 'Точки крупа и таза (Hind End Points)',
+    category: 'technique',
+  },
+  {
+    id: 'sacrum_float',
+    en: 'Sacrum Float',
+    ru: 'Флоатинг крестца (Sacrum Float)',
+    category: 'technique',
+  },
+  {
+    id: 'psoas_release',
+    en: 'Psoas Release',
+    ru: 'Релиз пояснично-подвздошной мышцы (Psoas)',
+    category: 'technique',
+  },
+  {
+    id: 'leg_releases',
+    en: 'Leg Releases',
+    ru: 'Релизы конечностей (Leg Releases)',
+    category: 'technique',
+  },
+];
+
+// Keep legacy preset alias for backward compatibility
+export const RELEASE_SIGNS_PRESETS: Array<{ id: string; en: string; ru: string }> = [
+  ...QUICK_RELEASE_CHIPS,
+  ...MORE_RELEASE_SIGNS,
+];
+
+/**
+ * Normalizes legacy release sign strings (e.g. "Deep yawning" -> "Yawn") or matches canonical labels.
+ */
+const LEGACY_RELEASE_MAP: Record<string, string> = {
+  'Deep yawning': 'Yawn',
+  'Head lowering': 'Head drop',
+  'Licking & chewing': 'Lick & chew',
+  'Soft blinking': 'Blink / Soft eye',
+  'Deep sigh / exhalation': 'Deep sigh / Shake',
+  'Whole-body shake': 'Deep sigh / Shake',
+};
+
+export function normalizeReleaseSignLabel(raw: string): string {
+  return LEGACY_RELEASE_MAP[raw] || raw;
+}
+
+export function isReleaseSignSelected(selectedList: string[] | undefined, chipEn: string): boolean {
+  if (!selectedList || selectedList.length === 0) return false;
+  return selectedList.some((item) => normalizeReleaseSignLabel(item) === chipEn);
+}
+
+export function toggleReleaseSignInList(selectedList: string[] | undefined, chipEn: string): string[] {
+  const current = selectedList || [];
+  const exists = current.some((item) => normalizeReleaseSignLabel(item) === chipEn);
+  if (exists) {
+    return current.filter((item) => normalizeReleaseSignLabel(item) !== chipEn);
+  }
+  return [...current, chipEn];
+}
+
+export function formatChipLabel(item: TaxonomyChipItem, lang: Language): string {
+  return lang === 'ru' ? item.ru : item.en;
+}
+
+export function translateStoredTaxonomyValue(raw: string, lang: Language): string {
+  const normalized = normalizeReleaseSignLabel(raw);
+  if (lang === 'en') return normalized;
+  const allItems = [
+    ...QUICK_RELEASE_CHIPS,
+    ...MORE_RELEASE_SIGNS,
+    ...RESISTANCE_SIGNS,
+    ...MASTERSON_TECHNIQUES,
+  ];
+  const found = allItems.find((item) => item.en === normalized || item.en === raw);
+  return found ? found.ru : raw;
+}

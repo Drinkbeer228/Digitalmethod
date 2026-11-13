@@ -1,4 +1,4 @@
-const CACHE_NAME = 'masterson-case-digital-offline-v5';
+const CACHE_NAME = 'masterson-case-digital-offline-v6';
 
 const CORE_PRECACHE_URLS = [
   '/',
@@ -7,6 +7,10 @@ const CORE_PRECACHE_URLS = [
   '/manifest.webmanifest',
   '/diagrams/horse-left.png',
   '/diagrams/horse-top.png',
+  '/fonts/DejaVuSans.ttf',
+  '/fonts/DejaVuSans-Bold.ttf',
+  '/ort-wasm/ort-wasm-simd-threaded.wasm',
+  '/ort-wasm/ort-wasm-simd-threaded.mjs',
 ];
 
 self.addEventListener('install', (event) => {

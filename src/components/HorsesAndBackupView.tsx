@@ -9,7 +9,6 @@ import {
   HorseProfile,
   InstalledWhisperModel,
   Language,
-  WhisperModelId,
 } from '../types';
 import { TRANSLATIONS } from '../data/translations';
 import { DEMO_HORSE_ID } from '../data/demoCase';
@@ -19,6 +18,9 @@ import {
   downloadWhisperModelOnce,
   hasOPFS,
   importLocalWhisperFiles,
+  inspectLegacyWhisperTinyStorage,
+  LegacyWhisperTinyStatus,
+  removeLegacyWhisperTinyStorage,
   setActiveWhisperModel,
   verifyInstalledModelFiles,
   WHISPER_MODEL_SPECS,
@@ -108,12 +110,18 @@ export const HorsesAndBackupView: React.FC<HorsesAndBackupViewProps> = ({
   const [modelActionStatus, setModelActionStatus] = useState<string | null>(null);
   const [modelActionError, setModelActionError] = useState<string | null>(null);
   const [storageInfo, setStorageInfo] = useState<StorageEstimate>({ usage: null, quota: null });
+  const [legacyTinyStatus, setLegacyTinyStatus] = useState<LegacyWhisperTinyStatus | null>(null);
+  const [isRemovingLegacyTiny, setIsRemovingLegacyTiny] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     void estimateStorage().then(setStorageInfo);
+    void inspectLegacyWhisperTinyStorage().then(setLegacyTinyStatus);
   }, [installedModels.length]);
 
+  const activeSupportedModels = installedModels.filter(
+    (m) => (m.id as string) !== 'whisper-tiny'
+  );
   const currentSpec = WHISPER_MODEL_SPECS[selectedModelToInstall];
 
   const selectedHorse =
@@ -217,6 +225,31 @@ export const HorsesAndBackupView: React.FC<HorsesAndBackupViewProps> = ({
       );
     } finally {
       setImportStatus(null);
+    }
+  };
+
+  const handleRemoveLegacyTiny = async () => {
+    setModelActionError(null);
+    setModelActionStatus(null);
+    setIsRemovingLegacyTiny(true);
+    try {
+      const res = await removeLegacyWhisperTinyStorage();
+      await onRefreshModels();
+      const updatedTiny = await inspectLegacyWhisperTinyStorage();
+      setLegacyTinyStatus(updatedTiny);
+      if (res.removed) {
+        setModelActionStatus(
+          lang === 'ru'
+            ? `Устаревшие файлы Whisper Tiny удалены (${formatBytes(res.freedBytes)} освобождено). Модель Whisper Base сохранена.`
+            : `Legacy Whisper Tiny files removed (${formatBytes(res.freedBytes)} reclaimed). Whisper Base was not affected.`
+        );
+      }
+    } catch (err) {
+      setModelActionError(
+        err instanceof Error ? err.message : 'Failed to remove legacy Whisper Tiny files.'
+      );
+    } finally {
+      setIsRemovingLegacyTiny(false);
     }
   };
 
@@ -613,6 +646,39 @@ export const HorsesAndBackupView: React.FC<HorsesAndBackupViewProps> = ({
           </button>
         </div>
 
+        {legacyTinyStatus?.hasLegacyTiny && (
+          <div
+            data-testid="legacy-whisper-tiny-cleanup"
+            className="p-3 rounded-lg bg-amber-50 border border-amber-300 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-950"
+          >
+            <div>
+              <div className="font-semibold">
+                {lang === 'ru'
+                  ? 'Обнаружены устаревшие локальные файлы Whisper Tiny'
+                  : 'Legacy local Whisper Tiny files detected'}
+              </div>
+              <div className="text-[11px] text-amber-800 mt-0.5">
+                {lang === 'ru'
+                  ? `Модель Whisper Tiny больше не используется (${formatBytes(legacyTinyStatus.estimatedBytes)}). Вы можете безопасно удалить её, не затрагивая Whisper Base.`
+                  : `Whisper Tiny is no longer used (${formatBytes(legacyTinyStatus.estimatedBytes)}). You can safely remove it without affecting Whisper Base.`}
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={isRemovingLegacyTiny}
+              onClick={handleRemoveLegacyTiny}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-900 hover:bg-amber-950 disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>
+                {isRemovingLegacyTiny
+                  ? lang === 'ru' ? 'Удаление...' : 'Removing...'
+                  : lang === 'ru' ? 'Удалить Whisper Tiny' : 'Remove Whisper Tiny'}
+              </span>
+            </button>
+          </div>
+        )}
+
         {showWhisperSettings && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
             {/* Left side of accordion: Model Selection & Download / Import */}
@@ -755,13 +821,13 @@ export const HorsesAndBackupView: React.FC<HorsesAndBackupViewProps> = ({
                 </span>
               </div>
 
-              {installedModels.length === 0 ? (
+              {activeSupportedModels.length === 0 ? (
                 <div className="p-4 rounded-lg border border-dashed border-slate-300 text-xs text-slate-500 text-center">
                   {t.noModelsInstalled}
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {installedModels.map((m) => (
+                  {activeSupportedModels.map((m) => (
                     <div
                       key={m.id}
                       className={`p-3 rounded-lg border text-xs space-y-1.5 ${

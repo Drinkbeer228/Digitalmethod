@@ -37,6 +37,9 @@ export interface AreaSideObservation {
   restriction: boolean;
   released: boolean;
   releaseSigns?: string[];
+  yawnCount?: number;
+  resistanceSigns?: string[];
+  techniques?: string[];
   note: string;
 }
 

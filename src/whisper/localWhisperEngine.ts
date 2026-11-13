@@ -7,7 +7,7 @@
  *    - `src/lib/resampler.ts` (16 kHz mono linear resampler)
  *    - `src/workers/engines/transformers/engine.ts` (`@huggingface/transformers` ONNX pipeline)
  */
-import { env, pipeline } from '@huggingface/transformers';
+import { env, pipeline, Tensor } from '@huggingface/transformers';
 import { db } from '../db/database';
 import { InstalledWhisperModel, WhisperModelId } from '../types';
 
@@ -136,12 +136,43 @@ env.allowRemoteModels = false;
 // In-memory fallback map used only when neither OPFS nor IndexedDB is available (e.g. headless Node unit tests)
 const memoryFallbackBlobs = new Map<string, ArrayBuffer>();
 
-// Cache loaded ASR pipeline instance in memory by `${modelId}:${revision}:${dtype}`
-let cachedPipelineKey: string | null = null;
-let cachedPipelineInstance: ((
+export interface WhisperGenerationConfigLike {
+  is_multilingual?: boolean;
+  decoder_start_token_id?: number;
+  no_timestamps_token_id?: number;
+  language?: string;
+  task?: string;
+  return_timestamps?: boolean;
+  lang_to_id?: Record<string, number>;
+  task_to_id?: Record<string, number>;
+}
+
+export interface WhisperModelLike {
+  generation_config?: WhisperGenerationConfigLike;
+  _prepare_generation_config?: (
+    generationConfig: WhisperGenerationConfigLike | null,
+    kwargs: Record<string, unknown>
+  ) => WhisperGenerationConfigLike;
+  _retrieve_init_tokens?: (generationConfig: WhisperGenerationConfigLike) => number[];
+  forward?: (inputs: Record<string, unknown>) => Promise<{
+    logits?: {
+      dims?: number[];
+      data?: Float32Array | ArrayLike<number>;
+    };
+  }>;
+}
+
+export type WhisperPipelineInstance = ((
   audio: Float32Array,
   options?: Record<string, unknown>
-) => Promise<{ text?: string }>) | null = null;
+) => Promise<{ text?: string }>) & {
+  model?: WhisperModelLike;
+  processor?: (audio: Float32Array) => Promise<{ input_features: unknown }>;
+};
+
+// Cache loaded ASR pipeline instance in memory by `${modelId}:${hfRepo}:${revision}:${dtype}:${files}`
+let cachedPipelineKey: string | null = null;
+let cachedPipelineInstance: WhisperPipelineInstance | null = null;
 
 export function clearCachedWhisperPipeline(): void {
   cachedPipelineKey = null;
@@ -486,7 +517,7 @@ export function validateModelFileContent(
         return {
           valid: false,
           detail:
-            'English-only (.en) Whisper models are not supported. Please install a multilingual Whisper model (onnx-community/whisper-tiny or onnx-community/whisper-base) capable of both Russian and English.',
+            'English-only (.en) Whisper models are not supported. Please install the multilingual Whisper Base model (onnx-community/whisper-base) capable of both Russian and English.',
         };
       }
     }
@@ -660,7 +691,7 @@ async function loadLocalWhisperPipeline(
   revision: string,
   dtype: 'q8' | 'q4' | 'int8' | 'uint8' | 'fp16' | 'fp32',
   fileNames: string[]
-): Promise<(audio: Float32Array, options?: Record<string, unknown>) => Promise<{ text?: string }>> {
+): Promise<WhisperPipelineInstance> {
   configureOfflineTransformersCache(modelId, fileNames);
 
   const key = `${modelId}:${hfRepo}:${revision}:${dtype}:${fileNames.join(',')}`;
@@ -687,10 +718,7 @@ async function loadLocalWhisperPipeline(
     pipelineOptions
   );
 
-  const callable = asr as (
-    audio: Float32Array,
-    options?: Record<string, unknown>
-  ) => Promise<{ text?: string }>;
+  const callable = asr as WhisperPipelineInstance;
 
   cachedPipelineKey = key;
   cachedPipelineInstance = callable;
@@ -806,7 +834,7 @@ export async function verifyInstalledModelFiles(
 }
 
 export interface DownloadProgressInfo {
-  modelId: 'whisper-tiny' | 'whisper-base';
+  modelId: 'whisper-base';
   percent: number;
   loadedBytes: number;
   totalBytes: number;
@@ -815,12 +843,12 @@ export interface DownloadProgressInfo {
 
 /**
  * Option 1: Download model once for offline use.
- * - Downloads ONLY the required files for the selected model from its pinned Hugging Face commit SHA.
+ * - Downloads ONLY the required files for Whisper Base from its pinned Hugging Face commit SHA.
  * - Sets `env.allowRemoteModels = true` ONLY during this explicit user-requested installation, then restores `env.allowRemoteModels = false`.
  * - Verifies integrity AND runs a real local ONNX inference test before marking `verified: true`.
  */
 export async function downloadWhisperModelOnce(
-  modelId: 'whisper-tiny' | 'whisper-base',
+  modelId: 'whisper-base' = 'whisper-base',
   onProgress: (info: DownloadProgressInfo) => void,
   signal?: AbortSignal
 ): Promise<InstalledWhisperModel> {
@@ -1015,8 +1043,8 @@ export async function importLocalWhisperFiles(
     }
   }
 
-  const modelId: 'whisper-tiny' | 'whisper-base' =
-    targetModelChoice === 'whisper-base' ? 'whisper-base' : 'whisper-tiny';
+  const modelId: 'whisper-base' =
+    targetModelChoice === 'custom-imported' ? 'whisper-base' : 'whisper-base';
   const spec = WHISPER_MODEL_SPECS[modelId];
 
   // Step 2: Normalize file paths and read buffers into memory for pre-installation validation
@@ -1128,11 +1156,143 @@ export async function importLocalWhisperFiles(
   return installed;
 }
 
+export interface ResolvedWhisperInitTokens {
+  isMultilingual: boolean;
+  language: 'russian' | 'english';
+  task: 'transcribe';
+  initTokens: number[];
+  expectedLanguageTokenId: number;
+  expectedTaskTokenId: number;
+}
+
+/**
+ * Resolve and verify the exact decoder prompt tokens produced by `@huggingface/transformers`
+ * for a Whisper model before generation starts.
+ * Guarantees:
+ * - Model is multilingual (`is_multilingual === true`).
+ * - `task` resolves to `transcribe` (never `translate`).
+ * - Requested language (`russian` or `english`) is explicitly encoded in `initTokens`.
+ */
+export function resolveWhisperInitTokens(
+  model: WhisperModelLike | undefined,
+  language: 'russian' | 'english',
+  task: 'transcribe' = 'transcribe'
+): ResolvedWhisperInitTokens {
+  const baseConfig = model?.generation_config;
+  if (!baseConfig) {
+    throw new Error('Whisper model generation_config is missing.');
+  }
+
+  if (baseConfig.is_multilingual === false) {
+    throw new Error(
+      'Active Whisper model is English-only (is_multilingual=false) and cannot transcribe Russian speech.'
+    );
+  }
+
+  const preparedConfig =
+    typeof model._prepare_generation_config === 'function'
+      ? model._prepare_generation_config(null, {
+          language,
+          task,
+          return_timestamps: false,
+        })
+      : {
+          ...baseConfig,
+          language,
+          task,
+          return_timestamps: false,
+        };
+
+  const initTokens =
+    typeof model._retrieve_init_tokens === 'function'
+      ? model._retrieve_init_tokens(preparedConfig)
+      : [
+          preparedConfig.decoder_start_token_id ?? 50258,
+          preparedConfig.lang_to_id?.[language === 'russian' ? '<|ru|>' : '<|en|>'] ??
+            (language === 'russian' ? 50263 : 50259),
+          preparedConfig.task_to_id?.[task] ?? 50359,
+          preparedConfig.no_timestamps_token_id ?? 50363,
+        ];
+
+  const langTag = language === 'russian' ? '<|ru|>' : '<|en|>';
+  const expectedLanguageTokenId =
+    preparedConfig.lang_to_id?.[langTag] ??
+    baseConfig.lang_to_id?.[langTag] ??
+    (language === 'russian' ? 50263 : 50259);
+  const expectedTaskTokenId =
+    preparedConfig.task_to_id?.[task] ?? baseConfig.task_to_id?.[task] ?? 50359;
+  const translateTokenId =
+    preparedConfig.task_to_id?.translate ?? baseConfig.task_to_id?.translate ?? 50358;
+
+  if (!initTokens.includes(expectedLanguageTokenId)) {
+    throw new Error(
+      `Whisper init tokens [${initTokens.join(', ')}] do not include expected ${langTag} token (${expectedLanguageTokenId}).`
+    );
+  }
+  if (!initTokens.includes(expectedTaskTokenId) || initTokens.includes(translateTokenId)) {
+    throw new Error(
+      `Whisper init tokens [${initTokens.join(', ')}] did not enforce transcribe task (${expectedTaskTokenId}).`
+    );
+  }
+
+  return {
+    isMultilingual: preparedConfig.is_multilingual !== false,
+    language,
+    task,
+    initTokens,
+    expectedLanguageTokenId,
+    expectedTaskTokenId,
+  };
+}
+
+/**
+ * Perform a single 1-step Whisper encoder+decoder pass from `<|startoftranscript|>` to compare
+ * acoustic language logits between Russian (`<|ru|>`) and English (`<|en|>`).
+ * Used when `preferredLang === 'auto'` because `@huggingface/transformers@4.3.2` otherwise
+ * defaults to `'en'` whenever `language` is omitted, which translates Russian speech into English.
+ */
+export async function detectSpokenLanguageFromWhisper(
+  asr: WhisperPipelineInstance,
+  pcmSamples: Float32Array
+): Promise<'russian' | 'english'> {
+  if (!asr.processor || typeof asr.model?.forward !== 'function') {
+    return 'russian';
+  }
+
+  const genConfig = asr.model.generation_config;
+  const decoderStartId = genConfig?.decoder_start_token_id ?? 50258;
+  const ruTokenId = genConfig?.lang_to_id?.['<|ru|>'] ?? 50263;
+  const enTokenId = genConfig?.lang_to_id?.['<|en|>'] ?? 50259;
+
+  // Use up to 30 seconds (480,000 samples @ 16 kHz) for Whisper's 30s encoder window
+  const windowSlice =
+    pcmSamples.length > 480_000 ? pcmSamples.subarray(0, 480_000) : pcmSamples;
+  const features = await asr.processor(windowSlice);
+  const decoderInputIds = new Tensor(
+    'int64',
+    BigInt64Array.from([BigInt(decoderStartId)]),
+    [1, 1]
+  );
+  const out = await asr.model.forward({
+    input_features: features.input_features,
+    decoder_input_ids: decoderInputIds,
+  });
+
+  const logitsData = out?.logits?.data;
+  if (!logitsData || logitsData.length <= Math.max(ruTokenId, enTokenId)) {
+    return 'russian';
+  }
+
+  const ruLogit = Number(logitsData[ruTokenId]);
+  const enLogit = Number(logitsData[enTokenId]);
+  return ruLogit >= enLogit ? 'russian' : 'english';
+}
+
 /**
  * Perform 100% genuine local ONNX Whisper transcription of an audio clip using the active verified model.
  * - Never returns hardcoded or demonstration transcripts.
  * - Runs with `env.allowRemoteModels = false` and network fetch blocked.
- * - Surfaces any model loading or inference errors directly to the caller.
+ * - Enforces `task: 'transcribe'` and explicit target language tokens so Russian speech is never translated to English.
  */
 export async function transcribeAudioClipLocally(
   audioSource: Blob | ArrayBuffer | Uint8Array | Float32Array | string,
@@ -1147,14 +1307,15 @@ export async function transcribeAudioClipLocally(
   let activeModel = explicitModel;
   if (!activeModel && hasIndexedDB()) {
     const models = await db.whisperModels.toArray();
-    activeModel =
-      models.find((m) => m.active && m.verified && m.format === 'onnx') ??
-      models.find((m) => m.verified && m.format === 'onnx');
+    const usableModels = models.filter(
+      (m) => (m.id as string) !== 'whisper-tiny' && m.verified && m.format === 'onnx'
+    );
+    activeModel = usableModels.find((m) => m.active) ?? usableModels[0];
   }
 
-  if (!activeModel) {
+  if (!activeModel || (activeModel.id as string) === 'whisper-tiny') {
     throw new Error(
-      'No verified local ONNX Whisper model is installed. Please install onnx-community/whisper-tiny or onnx-community/whisper-base in the Whisper Model Manager before transcribing.'
+      'No verified local ONNX Whisper Base model is installed. Please install onnx-community/whisper-base in the Whisper Model Manager before transcribing.'
     );
   }
 
@@ -1167,10 +1328,7 @@ export async function transcribeAudioClipLocally(
     throw new Error(dtypeCheck.error);
   }
 
-  const spec =
-    activeModel.id === 'whisper-base'
-      ? WHISPER_MODEL_SPECS['whisper-base']
-      : WHISPER_MODEL_SPECS['whisper-tiny'];
+  const spec = WHISPER_MODEL_SPECS['whisper-base'];
 
   onStage?.('Decoding & resampling audio to 16 kHz mono PCM...');
   const pcmSamples = await decodeAudioTo16kHzPCM(audioSource);
@@ -1191,72 +1349,29 @@ export async function transcribeAudioClipLocally(
     activeModel.fileNames
   );
 
-  onStage?.(
-    `Running local ONNX Whisper inference on ${durationSec}s audio (offline)...`
-  );
-
-  const languageArg =
-    preferredLang === 'ru'
-      ? 'russian'
-      : preferredLang === 'en'
-        ? 'english'
-        : undefined;
-
-  // Diagnostic logging of PCM signal immediately before Whisper inference
-  let minVal = Infinity;
-  let maxVal = -Infinity;
-  let peakAbs = 0;
-  let sumSq = 0;
-  let zeroCount = 0;
-  let nanCount = 0;
-  let infCount = 0;
-
-  for (let i = 0; i < pcmSamples.length; i++) {
-    const val = pcmSamples[i];
-    if (Number.isNaN(val)) {
-      nanCount++;
-      continue;
-    }
-    if (!Number.isFinite(val)) {
-      infCount++;
-      continue;
-    }
-    if (val < minVal) minVal = val;
-    if (val > maxVal) maxVal = val;
-    const abs = Math.abs(val);
-    if (abs > peakAbs) peakAbs = abs;
-    sumSq += val * val;
-    if (abs < 0.0001) zeroCount++;
+  let targetLanguage: 'russian' | 'english';
+  if (preferredLang === 'ru') {
+    targetLanguage = 'russian';
+  } else if (preferredLang === 'en') {
+    targetLanguage = 'english';
+  } else {
+    onStage?.('Detecting spoken language (RU / EN) offline...');
+    targetLanguage = await detectSpokenLanguageFromWhisper(asr, pcmSamples);
   }
 
-  const rms = pcmSamples.length > 0 ? Math.sqrt(sumSq / pcmSamples.length) : 0;
-  const zeroPct = pcmSamples.length > 0 ? ((zeroCount / pcmSamples.length) * 100).toFixed(2) : '0';
+  if (asr.model?.generation_config) {
+    resolveWhisperInitTokens(asr.model, targetLanguage, 'transcribe');
+  }
 
-  console.info('[WHISPER PCM DIAGNOSTICS]', {
-    arrayType: pcmSamples.constructor.name,
-    length: pcmSamples.length,
-    sampleRate: 16000,
-    channels: 1,
-    durationSec,
-    min: minVal === Infinity ? 0 : minVal,
-    max: maxVal === -Infinity ? 0 : maxVal,
-    peakAbs,
-    rms,
-    zeroPercentage: `${zeroPct}%`,
-    nanCount,
-    infCount,
-    hasClipping: peakAbs >= 0.99,
-  });
+  onStage?.(
+    `Running local ONNX Whisper inference on ${durationSec}s audio (${targetLanguage === 'russian' ? 'RU' : 'EN'} transcribe, offline)...`
+  );
 
   const out = await asr(pcmSamples, {
     task: 'transcribe',
+    language: targetLanguage,
     chunk_length_s: 30,
     stride_length_s: 5,
-    ...(languageArg ? { language: languageArg } : {}),
-    generate_kwargs: {
-      task: 'transcribe',
-      ...(languageArg ? { language: languageArg } : {}),
-    },
   });
 
   if (!out || typeof out.text !== 'string') {
@@ -1271,9 +1386,11 @@ export async function transcribeAudioClipLocally(
       ? 'mixed'
       : hasCyrillic
         ? 'ru'
-        : preferredLang === 'ru'
-          ? 'ru'
-          : 'en';
+        : hasLatin
+          ? 'en'
+          : targetLanguage === 'russian'
+            ? 'ru'
+            : 'en';
 
   return {
     text: transcriptText,
@@ -1282,8 +1399,114 @@ export async function transcribeAudioClipLocally(
   };
 }
 
-export async function deleteInstalledWhisperModel(modelId: WhisperModelId): Promise<void> {
-  clearCachedWhisperPipeline();
+export interface LegacyWhisperTinyStatus {
+  hasLegacyTiny: boolean;
+  inDbMetadata: boolean;
+  inDbBlobs: boolean;
+  inOpfs: boolean;
+  blobCount: number;
+  estimatedBytes: number;
+}
+
+/**
+ * Safely inspect whether leftover Whisper Tiny files or metadata exist in local storage
+ * without disturbing Whisper Base.
+ */
+export async function inspectLegacyWhisperTinyStorage(): Promise<LegacyWhisperTinyStatus> {
+  const legacyId = 'whisper-tiny';
+  let inDbMetadata = false;
+  let inDbBlobs = false;
+  let inOpfs = false;
+  let blobCount = 0;
+  let estimatedBytes = 0;
+
+  for (const [key, buf] of memoryFallbackBlobs.entries()) {
+    if (key.startsWith(`${legacyId}/`)) {
+      inDbBlobs = true;
+      blobCount += 1;
+      estimatedBytes += buf.byteLength;
+    }
+  }
+
+  if (hasIndexedDB()) {
+    try {
+      const metaRow = await db.whisperModels.get(legacyId);
+      if (metaRow) {
+        inDbMetadata = true;
+        estimatedBytes = Math.max(estimatedBytes, metaRow.sizeBytes || 0);
+      }
+      const blobRows = await db.modelFileBlobs.where('modelId').equals(legacyId).toArray();
+      if (blobRows.length > 0) {
+        inDbBlobs = true;
+        blobCount += blobRows.length;
+        const blobSum = blobRows.reduce((sum, r) => sum + (r.sizeBytes || r.data?.byteLength || 0), 0);
+        estimatedBytes = Math.max(estimatedBytes, blobSum);
+      }
+    } catch {
+      // Ignore inspection errors
+    }
+  }
+
+  if (hasOPFS()) {
+    try {
+      const root = await navigator.storage.getDirectory();
+      const modelsRoot = await root.getDirectoryHandle(OPFS_DIR_NAME, { create: false });
+      const tinyDir = await modelsRoot.getDirectoryHandle(legacyId, { create: false });
+      inOpfs = true;
+      const iterableDir = tinyDir as unknown as {
+        values?: () => AsyncIterable<FileSystemHandle>;
+      };
+      if (typeof iterableDir.values === 'function') {
+        let opfsBytes = 0;
+        for await (const entry of iterableDir.values()) {
+          if (entry.kind === 'file') {
+            const file = await (entry as FileSystemFileHandle).getFile().catch(() => null);
+            if (file) opfsBytes += file.size;
+          }
+        }
+        estimatedBytes = Math.max(estimatedBytes, opfsBytes);
+      }
+    } catch {
+      // whisper-tiny directory not present in OPFS
+    }
+  }
+
+  return {
+    hasLegacyTiny: inDbMetadata || inDbBlobs || inOpfs,
+    inDbMetadata,
+    inDbBlobs,
+    inOpfs,
+    blobCount,
+    estimatedBytes,
+  };
+}
+
+/**
+ * Safely remove ONLY legacy Whisper Tiny metadata and binary weights from OPFS / IndexedDB.
+ * Never removes or alters Whisper Base (`whisper-base`).
+ */
+export async function removeLegacyWhisperTinyStorage(): Promise<{
+  removed: boolean;
+  freedBytes: number;
+}> {
+  const status = await inspectLegacyWhisperTinyStorage();
+  if (!status.hasLegacyTiny) {
+    return { removed: false, freedBytes: 0 };
+  }
+
+  await deleteInstalledWhisperModel('whisper-tiny');
+  return {
+    removed: true,
+    freedBytes: status.estimatedBytes,
+  };
+}
+
+export async function deleteInstalledWhisperModel(
+  modelId: WhisperModelId | 'whisper-tiny'
+): Promise<void> {
+  if (!cachedPipelineKey || cachedPipelineKey.startsWith(`${modelId}:`)) {
+    clearCachedWhisperPipeline();
+  }
   for (const key of Array.from(memoryFallbackBlobs.keys())) {
     if (key.startsWith(`${modelId}/`)) {
       memoryFallbackBlobs.delete(key);
@@ -1305,8 +1528,9 @@ export async function deleteInstalledWhisperModel(modelId: WhisperModelId): Prom
       await db.whisperModels.delete(modelId);
       await db.modelFileBlobs.where('modelId').equals(modelId).delete();
       const remaining = await db.whisperModels.toArray();
-      if (remaining.length > 0 && !remaining.some((r) => r.active)) {
-        await db.whisperModels.update(remaining[0].id, { active: true });
+      const validRemaining = remaining.filter((r) => (r.id as string) !== 'whisper-tiny');
+      if (validRemaining.length > 0 && !validRemaining.some((r) => r.active)) {
+        await db.whisperModels.update(validRemaining[0].id, { active: true });
       }
     });
   }

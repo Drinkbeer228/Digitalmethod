@@ -1,5 +1,19 @@
 import { ANATOMICAL_AREAS, TOP_VIEW_ANCHORS } from '../data/anatomicalAreas';
+import { translateStoredTaxonomyValue } from '../data/translations';
 import { BodyworkSession, Language, ReportSections } from '../types';
+
+/**
+ * Combines unified Session Notes (`generalNotes`) and any legacy `manualVoiceNotes`
+ * without duplicating identical strings.
+ */
+export function getUnifiedSessionNotes(session: BodyworkSession): string {
+  const general = (session.generalNotes || '').trim();
+  const legacyManual = (session.manualVoiceNotes || '').trim();
+  if (!legacyManual) return general;
+  if (!general) return legacyManual;
+  if (general.includes(legacyManual)) return general;
+  return `${general}\n\n${legacyManual}`;
+}
 
 /**
  * Generates a structured 6-section session report from the practitioner's confirmed
@@ -12,22 +26,24 @@ export function buildReportFromSession(
   const reactionsList: string[] = [];
   const restrictionsList: string[] = [];
   const releaseSignsSet = new Set<string>();
+  const resistanceSignsSet = new Set<string>();
+  const techniquesSet = new Set<string>();
   const releasedAreasList: string[] = [];
 
   for (const area of ANATOMICAL_AREAS) {
     const row = session.evaluationTable[area.id];
     if (!row) continue;
 
-    const areaLabel =
-      lang === 'ru' ? `${area.nameRu} (${area.nameEn})` : area.nameEn;
+    const areaLabel = lang === 'ru' ? `${area.nameRu} (${area.nameEn})` : area.nameEn;
 
     for (const side of ['left', 'right'] as const) {
       const cell = row[side];
+      if (!cell) continue;
       const sideLabel =
         lang === 'ru'
           ? side === 'left'
-            ? 'Слева (Left)'
-            : 'Справа (Right)'
+            ? 'Слева'
+            : 'Справа'
           : side === 'left'
             ? 'Left'
             : 'Right';
@@ -54,7 +70,28 @@ export function buildReportFromSession(
 
       if (cell.releaseSigns && cell.releaseSigns.length > 0) {
         for (const sign of cell.releaseSigns) {
-          releaseSignsSet.add(sign);
+          const translated = translateStoredTaxonomyValue(sign, lang);
+          if (
+            (sign === 'Yawn' || sign === 'Deep yawning') &&
+            cell.yawnCount &&
+            cell.yawnCount > 1
+          ) {
+            releaseSignsSet.add(`${translated} ×${cell.yawnCount}`);
+          } else {
+            releaseSignsSet.add(translated);
+          }
+        }
+      }
+
+      if (cell.resistanceSigns && cell.resistanceSigns.length > 0) {
+        for (const rSign of cell.resistanceSigns) {
+          resistanceSignsSet.add(translateStoredTaxonomyValue(rSign, lang));
+        }
+      }
+
+      if (cell.techniques && cell.techniques.length > 0) {
+        for (const tech of cell.techniques) {
+          techniquesSet.add(translateStoredTaxonomyValue(tech, lang));
         }
       }
     }
@@ -102,21 +139,45 @@ export function buildReportFromSession(
         : 'No areas of restriction (older issues) currently marked in the 19-area evaluation table.';
 
   const signsArr = Array.from(releaseSignsSet);
+  const resistanceArr = Array.from(resistanceSignsSet);
+  const releaseParts: string[] = [];
+  if (signsArr.length > 0 || releasedAreasList.length > 0) {
+    releaseParts.push(
+      lang === 'ru'
+        ? `Признаки ответа и релиза: ${signsArr.length > 0 ? signsArr.join(', ') : 'отмечено расслабление'}.${releasedAreasList.length > 0 ? `\nЗоны с подтвержденным релизом (${releasedAreasList.length}): ${releasedAreasList.join('; ')}.` : ''}`
+        : `Observed response & release indicators: ${signsArr.length > 0 ? signsArr.join(', ') : 'softening noted'}.${releasedAreasList.length > 0 ? `\nAreas with confirmed release (${releasedAreasList.length}): ${releasedAreasList.join('; ')}.` : ''}`
+    );
+  }
+  if (resistanceArr.length > 0) {
+    releaseParts.push(
+      lang === 'ru'
+        ? `Признаки сопротивления / охраны: ${resistanceArr.join(', ')}.`
+        : `Observed resistance / guarding signs: ${resistanceArr.join(', ')}.`
+    );
+  }
+
   const releaseSignsObserved =
-    signsArr.length > 0 || releasedAreasList.length > 0
-      ? lang === 'ru'
-        ? `Признаки релиза: ${signsArr.length > 0 ? signsArr.join(', ') : 'отмечено расслабление'}.\nЗоны с подтвержденным релизом (${releasedAreasList.length}): ${releasedAreasList.join('; ')}.`
-        : `Observed release indicators: ${signsArr.length > 0 ? signsArr.join(', ') : 'softening noted'}.\nAreas with confirmed release (${releasedAreasList.length}): ${releasedAreasList.join('; ')}.`
+    releaseParts.length > 0
+      ? releaseParts.join('\n')
       : lang === 'ru'
         ? 'Признаки релиза еще не зафиксированы.'
         : 'No release signs recorded yet.';
 
+  const unifiedNotes = getUnifiedSessionNotes(session);
+  const techniquesArr = Array.from(techniquesSet);
+  const techniquesPrefix =
+    techniquesArr.length > 0
+      ? lang === 'ru'
+        ? `Примененные техники: ${techniquesArr.join(', ')}.\n\n`
+        : `Masterson Techniques applied: ${techniquesArr.join(', ')}.\n\n`
+      : '';
+
   const sessionNotes =
-    session.generalNotes?.trim() ||
-    session.manualVoiceNotes?.trim() ||
-    (lang === 'ru'
-      ? 'Введите заметки по примененным техникам Masterson Method.'
-      : 'Enter practitioner notes on Masterson Method techniques applied during this session.');
+    techniquesPrefix +
+    (unifiedNotes ||
+      (lang === 'ru'
+        ? 'Введите заметки по наблюдениям и техникам Masterson Method.'
+        : 'Enter practitioner notes on clinical observations and Masterson Method techniques applied during this session.'));
 
   const postSessionCareNotes =
     session.reportSections?.postSessionCareNotes?.trim() ||

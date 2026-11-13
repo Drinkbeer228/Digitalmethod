@@ -18,6 +18,7 @@ import {
   getAreaReactionEndpoints,
   TOP_VIEW_ANCHORS,
 } from '../data/anatomicalAreas';
+import { ZoomIn, ZoomOut } from 'lucide-react';
 
 export type DrawingTool =
   | 'select'
@@ -27,6 +28,8 @@ export type DrawingTool =
   | 'restriction'
   | 'diagonal'
   | 'eraser';
+
+type ZoomPresetId = 'full' | 'head_poll' | 'forelimb' | 'hindlimb';
 
 interface HorseSilhouetteSvgProps {
   view: 'left' | 'right' | 'top';
@@ -130,7 +133,12 @@ function buildReactionSvgPath(
     .join(' ');
 }
 
-function pointsToSvgPolygon( pts: Point[], width: number, height: number, mirrorX = false): string {
+function pointsToSvgPolygon(
+  pts: Point[],
+  width: number,
+  height: number,
+  mirrorX = false
+): string {
   return pts
     .map((p) => {
       const x = (mirrorX ? 1 - p.x : p.x) * width;
@@ -138,6 +146,31 @@ function pointsToSvgPolygon( pts: Point[], width: number, height: number, mirror
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(' ');
+}
+
+function getZoomViewBox(
+  view: 'left' | 'right' | 'top',
+  preset: ZoomPresetId,
+  width: number,
+  height: number
+): string {
+  if (view === 'top' || preset === 'full') {
+    return `0 0 ${width} ${height}`;
+  }
+  const isRight = view === 'right';
+  if (preset === 'head_poll') {
+    const vx = isRight ? 540 : 20;
+    return `${vx} 10 440 380`;
+  }
+  if (preset === 'forelimb') {
+    const vx = isRight ? 460 : 240;
+    return `${vx} 460 300 390`;
+  }
+  if (preset === 'hindlimb') {
+    const vx = isRight ? 40 : 660;
+    return `${vx} 460 300 390`;
+  }
+  return `0 0 ${width} ${height}`;
 }
 
 export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
@@ -161,18 +194,18 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
   const height = view === 'top' ? TOP_H : SIDE_H;
   const isMirrored = view === 'right';
 
+  const [zoomPreset, setZoomPreset] = useState<ZoomPresetId>('full');
+
   // Top View two-step anchor selection state (Atlas -> Gluteal/Sacrum)
   const [pendingAtlasAnchor, setPendingAtlasAnchor] = useState<
     'left_atlas' | 'right_atlas' | null
   >(null);
 
   const activeHighlightAreaId =
-    (selectedAreaTarget &&
-    (view === 'top' || selectedAreaTarget.side === view)
+    (selectedAreaTarget && (view === 'top' || selectedAreaTarget.side === view)
       ? selectedAreaTarget.areaId
       : null) ??
-    (hoveredAreaTarget &&
-    (!hoveredAreaTarget.side || hoveredAreaTarget.side === view)
+    (hoveredAreaTarget && (!hoveredAreaTarget.side || hoveredAreaTarget.side === view)
       ? hoveredAreaTarget.areaId
       : null);
 
@@ -198,7 +231,8 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
     }
 
     // Clicked a hindquarter destination (Gluteal / Sacrum)
-    const fromAtlas = pendingAtlasAnchor ?? (anchorKey.startsWith('right_') ? 'left_atlas' : 'right_atlas');
+    const fromAtlas =
+      pendingAtlasAnchor ?? (anchorKey.startsWith('right_') ? 'left_atlas' : 'right_atlas');
     if (onSelectDiagonalAnchors) {
       onSelectDiagonalAnchors(fromAtlas, anchorKey);
     } else if (onChangeAnnotations) {
@@ -221,10 +255,57 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
     setPendingAtlasAnchor(null);
   };
 
+  const viewBoxStr = getZoomViewBox(view, zoomPreset, width, height);
+
   return (
     <div className="relative w-full select-none">
+      {/* Optional Region Zoom Presets on interactive Left/Right views */}
+      {!readOnly && view !== 'top' && (
+        <div
+          data-testid={`svg-zoom-bar-${view}`}
+          className="flex flex-wrap items-center justify-between gap-1.5 mb-2 text-[11px]"
+        >
+          <span className="inline-flex items-center gap-1 text-slate-500 font-medium">
+            {zoomPreset === 'full' ? (
+              <ZoomIn className="w-3.5 h-3.5 text-[#2B4C3F]" />
+            ) : (
+              <ZoomOut className="w-3.5 h-3.5 text-[#2B4C3F]" />
+            )}
+            <span>{lang === 'ru' ? 'Масштаб:' : 'Zoom:'}</span>
+          </span>
+          <div className="inline-flex rounded-lg bg-[#F3F1EC] p-0.5 border border-slate-300">
+            {(
+              [
+                { id: 'full', label: lang === 'ru' ? 'Весь' : 'Full' },
+                { id: 'head_poll', label: lang === 'ru' ? 'Затылок' : 'Head/Poll' },
+                { id: 'forelimb', label: lang === 'ru' ? 'Перед. нога' : 'Forelimb' },
+                { id: 'hindlimb', label: lang === 'ru' ? 'Зад. нога' : 'Hindlimb' },
+              ] as const
+            ).map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                data-testid={`svg-zoom-${view}-${preset.id}`}
+                onClick={() =>
+                  setZoomPreset((prev) =>
+                    prev === preset.id && preset.id !== 'full' ? 'full' : preset.id
+                  )
+                }
+                className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                  zoomPreset === preset.id
+                    ? 'bg-[#2B4C3F] text-white'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <svg
-        viewBox={`0 0 ${width} ${height}`}
+        viewBox={viewBoxStr}
         className="w-full h-auto block rounded-xl border border-slate-300/90 bg-[#FAF9F6] touch-manipulation"
         data-testid={`horse-svg-${view}`}
       >
@@ -386,6 +467,9 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
                 Boolean(obs.reaction) ||
                 obs.restriction ||
                 obs.released ||
+                Boolean(obs.releaseSigns && obs.releaseSigns.length > 0) ||
+                Boolean(obs.resistanceSigns && obs.resistanceSigns.length > 0) ||
+                Boolean(obs.techniques && obs.techniques.length > 0) ||
                 Boolean(obs.note?.trim());
 
               const isSelected =
@@ -642,9 +726,7 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
                           textAnchor="middle"
                           fontSize="10.5"
                           fontWeight="700"
-                          fill={
-                            hasObservation || isSelected ? '#FFFFFF' : '#1E2421'
-                          }
+                          fill={hasObservation || isSelected ? '#FFFFFF' : '#1E2421'}
                         >
                           {area.index}
                         </text>
@@ -679,10 +761,7 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
                   }}
                 >
                   <title>
-                    {area.index}.{' '}
-                    {lang === 'ru'
-                      ? `${area.nameRu} (${area.nameEn})`
-                      : area.nameEn}
+                    {area.index}. {lang === 'ru' ? area.nameRu : area.nameEn}
                   </title>
                   {area.hitPolygon && (
                     <polygon

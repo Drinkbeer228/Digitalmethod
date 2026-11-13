@@ -46,7 +46,14 @@ import {
   TOP_VIEW_ANCHORS,
 } from './data/anatomicalAreas';
 import { TRANSLATIONS } from './data/translations';
-import { buildReportFromSession } from './utils/reportGenerator';
+import {
+  buildReportFromSession,
+  getUnifiedSessionNotes,
+} from './utils/reportGenerator';
+import {
+  buildSessionPdfFile,
+  shareOrDownloadPdfFile,
+} from './utils/pdfExport';
 import { DrawingTool, HorseSilhouetteSvg } from './components/HorseSilhouetteSvg';
 import { CentralEvaluationTable } from './components/CentralEvaluationTable';
 import { EvaluationAudioNotesPanel } from './components/EvaluationAudioNotesPanel';
@@ -54,9 +61,13 @@ import { SessionReportAndPdfView } from './components/SessionReportAndPdfView';
 import { HorsesAndBackupView } from './components/HorsesAndBackupView';
 import { OfflineConnectivityBanner, PWAInstallAction } from './pwa/PWAInstallBanner';
 import {
+  ChevronDown,
+  ChevronUp,
   Eye,
   Hash,
   Layers,
+  List,
+  Map as MapIcon,
   Redo2,
   Trash2,
   Undo2,
@@ -101,8 +112,11 @@ export default function App() {
   const [showPastelZones, setShowPastelZones] = useState<boolean>(true);
   const [showLandmarkNumbers, setShowLandmarkNumbers] = useState<boolean>(true);
 
-  // Mobile responsive sub-view switcher for evaluation workspace
-  const [mobileEvalPane, setMobileEvalPane] = useState<'all' | 'left' | 'table' | 'right'>('all');
+  // Mobile-First Practitioner Thumb-Zone State (< lg breakpoint)
+  const [mobileActiveView, setMobileActiveView] = useState<'left' | 'right' | 'top'>('left');
+  const [mobileMode, setMobileMode] = useState<'map' | 'list'>('map');
+  const [isSessionMetaExpanded, setIsSessionMetaExpanded] = useState<boolean>(false);
+  const [isExportingQuickPdf, setIsExportingQuickPdf] = useState<boolean>(false);
 
   useEffect(() => {
     void (async () => {
@@ -165,6 +179,7 @@ export default function App() {
         .where('sessionId')
         .equals(nextSessionId)
         .toArray();
+      clips.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       setVoiceClips(clips);
     } else {
       setVoiceClips([]);
@@ -356,6 +371,8 @@ export default function App() {
           restriction: false,
           released: false,
           releaseSigns: [],
+          resistanceSigns: [],
+          techniques: [],
           note: '',
         },
       };
@@ -485,7 +502,7 @@ export default function App() {
   };
 
   /**
-   * Apply a confirmed Assisted Case Completion suggestion to the session
+   * Apply a confirmed per-clip transcript suggestion to the session
    */
   const handleApplySuggestion = (sug: ProposedCaseSuggestion) => {
     if (!activeSession) return;
@@ -511,6 +528,7 @@ export default function App() {
           new Set([...(cur.releaseSigns ?? []), ...(sug.releaseSigns ?? [])])
         );
         const updatedCell: AreaSideObservation = {
+          ...cur,
           reaction: sug.reactionLevel !== undefined ? sug.reactionLevel : cur.reaction,
           restriction: sug.restriction !== undefined ? sug.restriction : cur.restriction,
           released: sug.released !== undefined ? sug.released : cur.released,
@@ -550,14 +568,37 @@ export default function App() {
       return;
     }
 
-    // Unclassified or general release note -> append to generalNotes
-    const appendedNotes = activeSession.generalNotes
-      ? `${activeSession.generalNotes}\n${sug.sourceSentence}`
+    const currentNotes = getUnifiedSessionNotes(activeSession);
+    const appendedNotes = currentNotes
+      ? `${currentNotes}\n${sug.sourceSentence}`
       : sug.sourceSentence;
     void persistSessionUpdate({
       ...activeSession,
       generalNotes: appendedNotes,
+      manualVoiceNotes: '',
     });
+  };
+
+  const handleQuickExportPdf = async () => {
+    if (!activeHorse || !activeSession) return;
+    setIsExportingQuickPdf(true);
+    try {
+      const pdfFile = await buildSessionPdfFile(
+        activeHorse,
+        activeSession,
+        'certification',
+        lang
+      );
+      await shareOrDownloadPdfFile(
+        pdfFile,
+        `Masterson Method Report — ${activeHorse.name}`
+      );
+    } catch (err) {
+      console.error('Quick PDF export failed:', err);
+      setActiveTab('report');
+    } finally {
+      setIsExportingQuickPdf(false);
+    }
   };
 
   const handleExportBackup = async () => {
@@ -644,7 +685,8 @@ export default function App() {
       setSessions(inSessions);
       setLang(language);
       const firstH = inHorses[0]?.id ?? '';
-      const firstS = inSessions.find((s) => s.horseId === firstH)?.id ?? inSessions[0]?.id ?? '';
+      const firstS =
+        inSessions.find((s) => s.horseId === firstH)?.id ?? inSessions[0]?.id ?? '';
       await handleSelectHorseAndSession(firstH, firstS);
 
       return {
@@ -667,23 +709,27 @@ export default function App() {
     );
   }
 
+  const unifiedSessionNotesValue = activeSession
+    ? getUnifiedSessionNotes(activeSession)
+    : '';
+  const ownerCareNotesValue =
+    activeSession?.reportSections?.postSessionCareNotes ?? '';
+
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-[#1E2421]">
-      {/* TOP NAVIGATION BAR (Strict 3-Zone Contract: Brand — 4 Nav Links — 1 Primary Action) */}
-      <header className="no-print sticky top-0 z-30 flex items-center justify-between gap-8 px-4 md:px-8 py-3.5 bg-[#FAF9F6]/95 backdrop-blur-xs border-b border-slate-300">
-        {/* Zone 1: Single text element wordmark */}
+      {/* TOP NAVIGATION BAR */}
+      <header className="no-print sticky top-0 z-30 flex items-center justify-between gap-4 px-3 md:px-8 py-2.5 md:py-3.5 bg-[#FAF9F6]/95 backdrop-blur-xs border-b border-slate-300">
         <a
           href="#editor"
           onClick={(e) => {
             e.preventDefault();
             setActiveTab('editor');
           }}
-          className="text-lg font-editorial font-bold tracking-tight text-[#2B4C3F] whitespace-nowrap shrink-0"
+          className="text-base md:text-lg font-editorial font-bold tracking-tight text-[#2B4C3F] whitespace-nowrap shrink-0"
         >
           {t.appName}
         </a>
 
-        {/* Zone 2: 3 clean single-line text navigation links */}
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
           <button
             type="button"
@@ -720,47 +766,47 @@ export default function App() {
           </button>
         </nav>
 
-        {/* Zone 3: 1 primary action */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Mobile Navigation Pills inside Header to save vertical fold space */}
+          <div className="flex md:hidden items-center bg-[#F3F1EC] p-0.5 rounded-lg border border-slate-300 text-[11px] font-semibold">
+            {(['editor', 'horses', 'report'] as ActiveTab[]).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={`px-2 py-1 rounded-md cursor-pointer ${
+                  activeTab === tab
+                    ? 'bg-[#2B4C3F] text-white'
+                    : 'text-slate-700'
+                }`}
+              >
+                {tab === 'editor'
+                  ? t.navCaseEditor
+                  : tab === 'horses'
+                    ? lang === 'ru'
+                      ? 'Лошади'
+                      : 'Horses'
+                    : 'PDF'}
+              </button>
+            ))}
+          </div>
+
           <button
             type="button"
             onClick={() => void handleCreateNewSession()}
-            className="px-4 py-2 text-xs font-semibold text-white bg-[#2B4C3F] rounded-lg hover:bg-[#223D32] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="hidden sm:inline-flex px-3.5 py-1.5 text-xs font-semibold text-white bg-[#2B4C3F] rounded-lg hover:bg-[#223D32] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             {t.newSession}
           </button>
         </div>
       </header>
 
-      {/* MOBILE NAVIGATION STRIP (Only on small screens) */}
-      <div className="no-print md:hidden grid grid-cols-3 gap-1 border-b border-slate-300 bg-[#F3F1EC] px-2 py-1.5 text-[11px] font-medium">
-        {(['editor', 'horses', 'report'] as ActiveTab[]).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className={`px-1.5 py-1.5 rounded-md text-center truncate cursor-pointer ${
-              activeTab === tab
-                ? 'bg-[#2B4C3F] text-white font-semibold'
-                : 'text-slate-700'
-            }`}
-          >
-            {tab === 'editor'
-              ? t.navCaseEditor
-              : tab === 'horses'
-                ? t.navHorses
-                : t.navReport}
-          </button>
-        ))}
-      </div>
-
-      {/* WORKSPACE UTILITY SUB-BAR: Horse/Session Switcher, EN/RU Language Switch, PWA Install, Demo Controls */}
-      <div className="no-print border-b border-slate-300/80 bg-[#F3F1EC] px-4 md:px-8 py-2.5">
-        <div className="max-w-[1400px] mx-auto flex flex-wrap items-center justify-between gap-2.5 text-xs">
-          {/* Active Horse & Session Switchers */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="flex items-center gap-1.5">
-              <label htmlFor="horse-switcher" className="font-semibold text-slate-600">
+      {/* COMPACT WORKSPACE UTILITY SUB-BAR: Horse/Session Switcher + EN/RU Language Switch */}
+      <div className="no-print border-b border-slate-300/80 bg-[#F3F1EC] px-2.5 md:px-8 py-1.5 md:py-2">
+        <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-1.5 text-xs">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <div className="flex items-center gap-1 min-w-0">
+              <label htmlFor="horse-switcher" className="font-semibold text-slate-600 hidden sm:inline">
                 {t.horseLabel}:
               </label>
               <select
@@ -771,7 +817,7 @@ export default function App() {
                   const firstSess = sessions.find((s) => s.horseId === hId);
                   void handleSelectHorseAndSession(hId, firstSess?.id ?? '');
                 }}
-                className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-[#1E2421]"
+                className="max-w-[130px] sm:max-w-none truncate rounded-md border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold text-[#1E2421]"
               >
                 {horses.map((h) => (
                   <option key={h.id} value={h.id}>
@@ -782,8 +828,8 @@ export default function App() {
             </div>
 
             {activeHorse && (
-              <div className="flex items-center gap-1.5">
-                <label htmlFor="session-switcher" className="font-semibold text-slate-600">
+              <div className="flex items-center gap-1 min-w-0">
+                <label htmlFor="session-switcher" className="font-semibold text-slate-600 hidden sm:inline">
                   {t.sessionNum}:
                 </label>
                 <select
@@ -792,7 +838,7 @@ export default function App() {
                   onChange={(e) =>
                     void handleSelectHorseAndSession(activeHorse.id, e.target.value)
                   }
-                  className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold font-tabular text-[#1E2421]"
+                  className="max-w-[135px] sm:max-w-none truncate rounded-md border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold font-tabular text-[#1E2421]"
                 >
                   {sessions
                     .filter((s) => s.horseId === activeHorse.id)
@@ -805,15 +851,11 @@ export default function App() {
                 </select>
               </div>
             )}
-
-            <span className="text-slate-400 hidden sm:inline">·</span>
-            <span className="text-slate-500 hidden sm:inline">{t.autoSaveStatus}</span>
           </div>
 
-          {/* Right side: Demo Delete Button, PWA Install, EN / RU Language Toggle */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             {activeHorse?.isDemo && (
-              <div className="flex items-center gap-1.5 bg-amber-100/80 border border-amber-300 text-amber-950 px-2.5 py-1 rounded-md text-[11px]">
+              <div className="hidden lg:flex items-center gap-1.5 bg-amber-100/80 border border-amber-300 text-amber-950 px-2.5 py-0.5 rounded-md text-[11px]">
                 <span className="font-medium">{t.demoBadge}</span>
                 <button
                   type="button"
@@ -835,7 +877,9 @@ export default function App() {
               </div>
             )}
 
-            <PWAInstallAction lang={lang} />
+            <div className="hidden sm:block">
+              <PWAInstallAction lang={lang} />
+            </div>
 
             {/* EN / RU Segmented Language Control */}
             <div
@@ -846,7 +890,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => void handleLanguageChange('en')}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                className={`px-2 py-0.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
                   lang === 'en'
                     ? 'bg-[#2B4C3F] text-white'
                     : 'text-slate-600 hover:text-slate-900'
@@ -857,7 +901,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => void handleLanguageChange('ru')}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                className={`px-2 py-0.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
                   lang === 'ru'
                     ? 'bg-[#2B4C3F] text-white'
                     : 'text-slate-600 hover:text-slate-900'
@@ -870,8 +914,8 @@ export default function App() {
         </div>
       </div>
 
-      {/* MAIN CONTENT STAGE */}
-      <main className="flex-1 w-full max-w-[1400px] mx-auto px-4 md:px-8 py-6">
+      {/* MAIN CONTENT STAGE (pb-28 so Sticky Bottom Thumb Bar never obscures lower hooves) */}
+      <main className="flex-1 w-full max-w-[1400px] mx-auto px-2.5 md:px-8 py-2.5 md:py-5 pb-28">
         {!activeHorse || !activeSession ? (
           <HorsesAndBackupView
             horses={horses}
@@ -913,9 +957,9 @@ export default function App() {
             }}
           />
         ) : activeTab === 'editor' ? (
-          /* TAB 1: CASE STUDY EVALUATION SHEET EDITOR & INTEGRATED AUDIO/NOTES PANEL */
-          <div className="space-y-5">
-            {/* INTEGRATED FIELD AUDIO RECORDER & NOTES PANEL */}
+          /* TAB 1: MOBILE-FIRST HORSE EVALUATION WORKSPACE & STICKY BOTTOM THUMB BAR */
+          <div className="space-y-3">
+            {/* Conditional Interrupted Audio Recovery Banner (Top) + Sticky Bottom Thumb Bar */}
             <EvaluationAudioNotesPanel
               session={activeSession}
               clips={voiceClips}
@@ -934,231 +978,205 @@ export default function App() {
                 await db.voiceClips.delete(clipId);
                 setVoiceClips((prev) => prev.filter((c) => c.id !== clipId));
               }}
-              onUpdateManualNotes={(notes) =>
+              onAppendTranscriptToSessionNotes={(transcriptText) => {
+                const current = getUnifiedSessionNotes(activeSession);
+                const nextNotes = current
+                  ? `${current}\n${transcriptText}`
+                  : transcriptText;
                 void persistSessionUpdate({
                   ...activeSession,
-                  manualVoiceNotes: notes,
-                })
-              }
+                  generalNotes: nextNotes,
+                  manualVoiceNotes: '',
+                });
+              }}
               onApplySuggestion={handleApplySuggestion}
               onNavigateToHorses={() => setActiveTab('horses')}
+              onQuickExportPdf={() => void handleQuickExportPdf()}
+              isExportingPdf={isExportingQuickPdf}
             />
 
-            {/* PAPER SHEET HEADER CARD */}
-            <section className="rounded-xl border border-slate-300 bg-white p-5 shadow-xs space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-14 h-10 rounded-full border-2 border-[#2B4C3F] bg-[#FAF9F6] flex flex-col items-center justify-center shrink-0 text-[#2B4C3F]">
-                    <span className="text-[7px] font-bold tracking-widest uppercase">
-                      MASTERSON
-                    </span>
-                    <span className="text-[8.5px] font-serif font-bold">METHOD</span>
-                  </div>
-                  <div>
-                    <h1 className="text-lg md:text-xl font-editorial font-bold text-[#1E2421]">
-                      {t.formTitle}
-                    </h1>
-                    <p className="text-xs text-slate-500">
-                      {t.step1Title} {t.step1Desc} · <strong>{t.step2Title}</strong>{' '}
-                      {t.step2Desc}
-                    </p>
-                  </div>
-                </div>
+            {/* ==============================================================
+                MOBILE "HORSE FIRST ABOVE THE FOLD" CONTROLS (< lg breakpoint)
+                Segmented View Switcher: Left | Right | Top
+                Mode Toggle: Map | List (19)
+               ============================================================== */}
+            <div
+              data-testid="mobile-thumb-top-bar"
+              className="lg:hidden flex items-center justify-between gap-1.5 bg-white p-1.5 rounded-xl border border-slate-300 shadow-2xs"
+            >
+              {/* Segmented View Switcher: Left | Right | Top */}
+              <div
+                className="inline-flex rounded-lg bg-[#F3F1EC] p-0.5 border border-slate-300 shrink-0"
+                role="group"
+                aria-label="Mobile View Switcher"
+              >
+                {(
+                  [
+                    { id: 'left', label: t.tableLeft },
+                    { id: 'right', label: t.tableRight },
+                    { id: 'top', label: lang === 'ru' ? 'Сверху' : 'Top' },
+                  ] as const
+                ).map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    data-testid={`mobile-view-${v.id}`}
+                    onClick={() => setMobileActiveView(v.id)}
+                    className={`min-h-[36px] px-2.5 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer ${
+                      mobileActiveView === v.id
+                        ? 'bg-[#2B4C3F] text-white shadow-2xs'
+                        : 'text-slate-700 hover:text-slate-900'
+                    }`}
+                  >
+                    {v.label}
+                  </button>
+                ))}
               </div>
 
-              {/* Editable Form Header Fields (3 rows matching the paper evaluation sheet) */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                {/* Row 1: Student | Case Study # | Session # | Date */}
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                    {t.studentLabel}
-                  </label>
-                  <input
-                    type="text"
-                    value={activeSession.practitioner}
-                    onChange={(e) =>
-                      void persistSessionUpdate({
-                        ...activeSession,
-                        practitioner: e.target.value,
-                      })
-                    }
-                    className="w-full rounded border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                    {t.caseStudyNum}
-                  </label>
-                  <input
-                    type="text"
-                    value={activeSession.caseStudyNumber}
-                    onChange={(e) =>
-                      void persistSessionUpdate({
-                        ...activeSession,
-                        caseStudyNumber: e.target.value,
-                      })
-                    }
-                    className="w-full rounded border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-tabular font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                    {t.sessionNum}
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={activeSession.sessionNumber}
-                    onChange={(e) =>
-                      void persistSessionUpdate({
-                        ...activeSession,
-                        sessionNumber: Math.max(1, Number(e.target.value) || 1),
-                      })
-                    }
-                    className="w-full rounded border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-tabular font-bold text-[#1E3A8A] focus:border-[#2B4C3F] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                    {t.dateLabel}
-                  </label>
-                  <input
-                    type="date"
-                    value={activeSession.date}
-                    onChange={(e) =>
-                      void persistSessionUpdate({
-                        ...activeSession,
-                        date: e.target.value,
-                      })
-                    }
-                    className="w-full rounded border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-tabular font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                  />
-                </div>
+              {/* Quick Mode Toggle: Map | List (19) + Undo/Redo */}
+              <div className="flex items-center gap-1 shrink-0">
+                {mobileActiveView !== 'top' && (
+                  <div
+                    className="inline-flex rounded-lg bg-[#F3F1EC] p-0.5 border border-slate-300"
+                    role="group"
+                    aria-label="Map or List Mode"
+                  >
+                    <button
+                      type="button"
+                      data-testid="mobile-mode-map"
+                      onClick={() => setMobileMode('map')}
+                      className={`min-h-[36px] inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold cursor-pointer ${
+                        mobileMode === 'map'
+                          ? 'bg-white text-[#2B4C3F] shadow-2xs'
+                          : 'text-slate-600'
+                      }`}
+                    >
+                      <MapIcon className="w-3.5 h-3.5" />
+                      <span>{lang === 'ru' ? 'Схема' : 'Map'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="mobile-mode-list"
+                      onClick={() => setMobileMode('list')}
+                      className={`min-h-[36px] inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold cursor-pointer ${
+                        mobileMode === 'list'
+                          ? 'bg-white text-[#2B4C3F] shadow-2xs'
+                          : 'text-slate-600'
+                      }`}
+                    >
+                      <List className="w-3.5 h-3.5" />
+                      <span>{lang === 'ru' ? 'Список (19)' : 'List (19)'}</span>
+                    </button>
+                  </div>
+                )}
 
-                {/* Row 2: Horse | Age | Breed | Horse's Job */}
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                    {t.horseLabel}
-                  </label>
-                  <input
-                    type="text"
-                    value={activeHorse.name}
-                    onChange={(e) =>
-                      void persistHorseUpdate({
-                        ...activeHorse,
-                        name: e.target.value,
-                      })
-                    }
-                    className="w-full rounded border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-semibold text-[#1E3A8A] focus:border-[#2B4C3F] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                    {t.ageLabel}
-                  </label>
-                  <input
-                    type="text"
-                    value={activeHorse.age}
-                    onChange={(e) =>
-                      void persistHorseUpdate({
-                        ...activeHorse,
-                        age: e.target.value,
-                      })
-                    }
-                    className="w-full rounded border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-tabular font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                    {t.breedLabel}
-                  </label>
-                  <input
-                    type="text"
-                    value={activeHorse.breed}
-                    onChange={(e) =>
-                      void persistHorseUpdate({
-                        ...activeHorse,
-                        breed: e.target.value,
-                      })
-                    }
-                    className="w-full rounded border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                    {t.jobLabel}
-                  </label>
-                  <input
-                    type="text"
-                    value={activeHorse.job}
-                    onChange={(e) =>
-                      void persistHorseUpdate({
-                        ...activeHorse,
-                        job: e.target.value,
-                      })
-                    }
-                    className="w-full rounded border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-semibold text-[#1E3A8A] focus:border-[#2B4C3F] focus:outline-none"
-                  />
-                </div>
-
-                {/* Row 3: Owner | Contact Info | Session Duration */}
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                    {t.ownerLabel}
-                  </label>
-                  <input
-                    type="text"
-                    value={activeHorse.owner}
-                    onChange={(e) =>
-                      void persistHorseUpdate({
-                        ...activeHorse,
-                        owner: e.target.value,
-                      })
-                    }
-                    className="w-full rounded border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                    {t.contactLabel}
-                  </label>
-                  <input
-                    type="text"
-                    value={activeHorse.contactInfo}
-                    onChange={(e) =>
-                      void persistHorseUpdate({
-                        ...activeHorse,
-                        contactInfo: e.target.value,
-                      })
-                    }
-                    className="w-full rounded border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
-                    {t.durationLabel}
-                  </label>
-                  <input
-                    type="text"
-                    value={activeSession.duration}
-                    onChange={(e) =>
-                      void persistSessionUpdate({
-                        ...activeSession,
-                        duration: e.target.value,
-                      })
-                    }
-                    className="w-full rounded border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-tabular font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
-                  />
-                </div>
+                <button
+                  type="button"
+                  disabled={undoStack.length === 0}
+                  onClick={handleUndo}
+                  aria-label={t.undo}
+                  className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-lg border border-slate-300 bg-[#FAF9F6] disabled:opacity-40 cursor-pointer"
+                >
+                  <Undo2 className="w-4 h-4" />
+                </button>
               </div>
-            </section>
+            </div>
 
-            {/* ANATOMICAL ZONING & STANDARDIZED MARKER CONTROL BAR */}
+            {/* MOBILE ACTIVE HORSE SILHOUETTE ABOVE THE FOLD (< lg breakpoint) */}
+            {mobileMode === 'map' || mobileActiveView === 'top' ? (
+              <div
+                data-testid="mobile-above-fold-diagram"
+                className="lg:hidden rounded-xl border border-slate-300 bg-white p-3 shadow-xs space-y-2"
+              >
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-[#2B4C3F]">
+                    {mobileActiveView === 'left'
+                      ? t.leftProfileTitle
+                      : mobileActiveView === 'right'
+                        ? t.rightProfileTitle
+                        : t.topViewTitle}
+                  </span>
+                  {mobileActiveView !== 'top' && (
+                    <button
+                      type="button"
+                      onClick={() => handleClearSideView(mobileActiveView)}
+                      className="text-[11px] text-slate-500 hover:text-red-700 cursor-pointer"
+                    >
+                      {t.clearView}
+                    </button>
+                  )}
+                </div>
+
+                {mobileActiveView === 'top' && (
+                  <div className="flex flex-wrap items-center gap-1 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSetPredominantDiagonalPreset('left_atlas', 'right_gluteal')
+                      }
+                      className="px-2 py-1 rounded border border-slate-300 bg-[#FAF9F6] font-medium"
+                    >
+                      L Atlas → R Gluteal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSetPredominantDiagonalPreset('right_atlas', 'left_gluteal')
+                      }
+                      className="px-2 py-1 rounded border border-slate-300 bg-[#FAF9F6] font-medium"
+                    >
+                      R Atlas → L Gluteal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSetPredominantDiagonalPreset('left_atlas', 'right_sacrum')
+                      }
+                      className="px-2 py-1 rounded border border-slate-300 bg-[#FAF9F6] font-medium"
+                    >
+                      L Atlas → R Sacrum
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSetPredominantDiagonalPreset('right_atlas', 'left_sacrum')
+                      }
+                      className="px-2 py-1 rounded border border-slate-300 bg-[#FAF9F6] font-medium"
+                    >
+                      R Atlas → L Sacrum
+                    </button>
+                  </div>
+                )}
+
+                <HorseSilhouetteSvg
+                  view={mobileActiveView}
+                  evaluationTable={activeSession.evaluationTable}
+                  annotations={activeSession.annotations}
+                  activeTool={activeTool}
+                  activeColor={activeColor}
+                  selectedAnnotationId={selectedAnnotationId}
+                  onSelectAnnotation={setSelectedAnnotationId}
+                  onChangeAnnotations={handleUpdateAnnotations}
+                  onSelectDiagonalAnchors={handleSetPredominantDiagonalPreset}
+                  selectedAreaTarget={activeTablePopover}
+                  hoveredAreaTarget={hoveredAreaTarget}
+                  onHoverArea={setHoveredAreaTarget}
+                  onAreaLandmarkClick={(areaId, side) =>
+                    setActiveTablePopover({ areaId, side })
+                  }
+                  activeRegionFilter={activeRegionFilter}
+                  showPastelZones={showPastelZones}
+                  showLandmarkNumbers={showLandmarkNumbers}
+                  lang={lang}
+                />
+              </div>
+            ) : null}
+
+            {/* DESKTOP ANATOMICAL ZONING & MARKER CONTROL BAR (hidden on compact mobile above-the-fold) */}
             <section
               data-testid="anatomical-region-toolbar"
-              className="rounded-xl border border-slate-300 bg-white p-3.5 shadow-xs space-y-3"
+              className="hidden lg:block rounded-xl border border-slate-300 bg-white p-3.5 shadow-xs space-y-3"
             >
-              {/* Top Row: 5 Pastel Anatomical Region Filters + View Toggles + Undo/Redo */}
               <div className="flex flex-wrap items-center justify-between gap-2.5">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 mr-1">
@@ -1216,16 +1234,10 @@ export default function App() {
                   })}
                 </div>
 
-                {/* Right controls: Pastel Zone toggle, Landmark numbers toggle, Undo/Redo */}
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => setShowPastelZones((v) => !v)}
-                    title={
-                      lang === 'ru'
-                        ? 'Показать/скрыть пастельные анатомические регионы'
-                        : 'Toggle subtle pastel anatomical regions'
-                    }
                     className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border cursor-pointer transition-colors ${
                       showPastelZones
                         ? 'bg-[#2B4C3F]/10 border-[#2B4C3F]/40 text-[#2B4C3F] font-semibold'
@@ -1233,19 +1245,12 @@ export default function App() {
                     }`}
                   >
                     <Eye className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">
-                      {lang === 'ru' ? 'Зоны' : 'Zones'}
-                    </span>
+                    <span>{lang === 'ru' ? 'Зоны' : 'Zones'}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setShowLandmarkNumbers((v) => !v)}
-                    title={
-                      lang === 'ru'
-                        ? 'Показать/скрыть номера точек 1–19'
-                        : 'Toggle landmark numbers #1–19'
-                    }
                     className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border cursor-pointer transition-colors ${
                       showLandmarkNumbers
                         ? 'bg-[#2B4C3F]/10 border-[#2B4C3F]/40 text-[#2B4C3F] font-semibold'
@@ -1253,7 +1258,7 @@ export default function App() {
                     }`}
                   >
                     <Hash className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">1–19</span>
+                    <span>1–19</span>
                   </button>
 
                   <button
@@ -1295,83 +1300,12 @@ export default function App() {
                   )}
                 </div>
               </div>
-
-              {/* Bottom Row: Standardized Vector Marker Legend & Touch Prompt */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80 text-[11px] text-slate-600">
-                <span>
-                  {lang === 'ru'
-                    ? 'Нажмите на любую анатомическую область на схеме лошади или в таблице 1–19 для выбора реакций, рестрикций, релиза и заметок:'
-                    : 'Tap any anatomical landmark on the horse illustration or central 19-area table to record standardized markers:'}
-                </span>
-
-                <div className="flex flex-wrap items-center gap-3 font-semibold">
-                  <span className="inline-flex items-center gap-1.5 text-[#B91C1C]">
-                    <span className="w-4 h-[1.5px] bg-[#B91C1C] inline-block" />
-                    <span>R1</span>
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-[#B91C1C]">
-                    <span className="w-4 h-[3.5px] bg-[#B91C1C] inline-block" />
-                    <span>R2</span>
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-[#B91C1C]">
-                    <svg className="w-4 h-2.5 stroke-[#B91C1C]" viewBox="0 0 18 10" fill="none">
-                      <path
-                        d="M1 8 L4 2 L7 8 L10 2 L13 8 L17 2"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    <span>R3</span>
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-[#1E3A8A]">
-                    <span className="w-3 h-3 rounded-full border-2 border-[#1E3A8A] bg-[#1E3A8A]/10 inline-block" />
-                    <span>{lang === 'ru' ? 'Рестрикция' : 'Restriction'}</span>
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-[#15803D]">
-                    <span className="w-3.5 h-3.5 rounded-full bg-[#15803D] text-white text-[9px] inline-flex items-center justify-center font-bold">
-                      ✓
-                    </span>
-                    <span>{lang === 'ru' ? 'Релиз' : 'Released'}</span>
-                  </span>
-                </div>
-              </div>
             </section>
 
-            {/* MOBILE PANE FILTER (Only shown below lg breakpoint so table & silhouettes stay roomy) */}
-            <div className="lg:hidden flex items-center gap-1.5 bg-[#F3F1EC] p-1 rounded-lg border border-slate-300 text-xs">
-              {(
-                [
-                  { id: 'all', label: lang === 'ru' ? 'Все панели' : 'All Views' },
-                  { id: 'left', label: t.tableLeft },
-                  { id: 'table', label: '19-Area Table' },
-                  { id: 'right', label: t.tableRight },
-                ] as const
-              ).map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setMobileEvalPane(p.id)}
-                  className={`flex-1 py-1.5 rounded-md font-medium cursor-pointer ${
-                    mobileEvalPane === p.id
-                      ? 'bg-white text-[#2B4C3F] font-semibold shadow-2xs'
-                      : 'text-slate-600'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-
-            {/* MAIN 3-COLUMN MASTERSON EVALUATION SHEET: LEFT PROFILE | 19-AREA TABLE | RIGHT PROFILE */}
+            {/* MAIN 3-COLUMN DESKTOP EVALUATION SHEET + MOBILE LIST (19) / BOTTOM SHEET HOST */}
             <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-              {/* Column A: Left Profile */}
-              <div
-                className={`lg:col-span-4 lg:sticky lg:top-16 rounded-xl border border-slate-300 bg-white p-4 shadow-xs space-y-2.5 ${
-                  mobileEvalPane !== 'all' && mobileEvalPane !== 'left'
-                    ? 'hidden lg:block'
-                    : ''
-                }`}
-              >
+              {/* Column A: Desktop Left Profile */}
+              <div className="hidden lg:block lg:col-span-4 lg:sticky lg:top-16 rounded-xl border border-slate-300 bg-white p-4 shadow-xs space-y-2.5">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-[#2B4C3F]">
                     {t.leftProfileTitle}
@@ -1407,14 +1341,8 @@ export default function App() {
                 />
               </div>
 
-              {/* Center Column: 19-Area Table */}
-              <div
-                className={`lg:col-span-4 ${
-                  mobileEvalPane !== 'all' && mobileEvalPane !== 'table'
-                    ? 'hidden lg:block'
-                    : ''
-                }`}
-              >
+              {/* Center Column: 19-Area Table (Desktop 3-col, Mobile List (19) when selected, + Always-Mounted Bottom Sheet Zone Editor) */}
+              <div className="lg:col-span-4">
                 <CentralEvaluationTable
                   tableState={activeSession.evaluationTable}
                   onUpdateCell={handleUpdateTableCell}
@@ -1424,17 +1352,21 @@ export default function App() {
                   hoveredAreaTarget={hoveredAreaTarget}
                   onHoverArea={setHoveredAreaTarget}
                   activeRegionFilter={activeRegionFilter}
+                  mobileSingleSide={
+                    mobileMode === 'list' && mobileActiveView !== 'top'
+                      ? mobileActiveView
+                      : null
+                  }
+                  tableContainerClassName={
+                    mobileMode === 'list' && mobileActiveView !== 'top'
+                      ? 'block'
+                      : 'hidden lg:block'
+                  }
                 />
               </div>
 
-              {/* Column B: Right Profile */}
-              <div
-                className={`lg:col-span-4 lg:sticky lg:top-16 rounded-xl border border-slate-300 bg-white p-4 shadow-xs space-y-2.5 ${
-                  mobileEvalPane !== 'all' && mobileEvalPane !== 'right'
-                    ? 'hidden lg:block'
-                    : ''
-                }`}
-              >
+              {/* Column B: Desktop Right Profile */}
+              <div className="hidden lg:block lg:col-span-4 lg:sticky lg:top-16 rounded-xl border border-slate-300 bg-white p-4 shadow-xs space-y-2.5">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-[#2B4C3F]">
                     {t.rightProfileTitle}
@@ -1471,19 +1403,17 @@ export default function App() {
               </div>
             </section>
 
-            {/* STEP 3 — FINAL EVALUATION: TOP VIEW PREDOMINANT DIAGONAL & GENERAL SESSION NOTES */}
+            {/* STEP 3 — DESKTOP TOP VIEW PREDOMINANT DIAGONAL + UNIFIED SESSION NOTES & OWNER CARE NOTES */}
             <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-              <div className="lg:col-span-7 rounded-xl border border-slate-300 bg-white p-5 shadow-xs space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h2 className="text-sm font-semibold text-[#2B4C3F]">
-                      {t.topViewTitle}
-                    </h2>
-                    <p className="text-xs text-slate-600 mt-0.5">{t.step3Desc}</p>
-                  </div>
+              {/* Desktop Top View Card (On mobile, Top View is accessed via the Segmented View Switcher above the fold) */}
+              <div className="hidden lg:block lg:col-span-6 rounded-xl border border-slate-300 bg-white p-5 shadow-xs space-y-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-[#2B4C3F]">
+                    {t.topViewTitle}
+                  </h2>
+                  <p className="text-xs text-slate-600 mt-0.5">{t.step3Desc}</p>
                 </div>
 
-                {/* Quick Diagonal Presets + Interactive Top View SVG */}
                 <div className="flex flex-wrap items-center gap-1.5 text-xs">
                   <button
                     type="button"
@@ -1550,31 +1480,60 @@ export default function App() {
                 />
               </div>
 
-              {/* General Session Notes */}
-              <div className="lg:col-span-5 rounded-xl border border-slate-300 bg-white p-5 shadow-xs flex flex-col justify-between space-y-3">
-                <div className="space-y-2 flex-1 flex flex-col">
+              {/* SINGLE UNIFIED NOTES FLOW: 1) Session Notes + 2) Owner Care Notes */}
+              <div className="lg:col-span-6 rounded-xl border border-slate-300 bg-white p-4 md:p-5 shadow-xs flex flex-col justify-between space-y-4">
+                {/* 1. Unified Session Notes */}
+                <div className="space-y-1.5">
                   <label
                     htmlFor="general-session-notes"
-                    className="text-sm font-semibold text-[#1E2421]"
+                    className="block text-xs md:text-sm font-bold text-[#1E2421]"
                   >
                     {t.generalNotesLabel}
                   </label>
                   <textarea
                     id="general-session-notes"
-                    rows={6}
-                    value={activeSession.generalNotes}
+                    data-testid="unified-session-notes-input"
+                    rows={4}
+                    value={unifiedSessionNotesValue}
                     onChange={(e) =>
                       void persistSessionUpdate({
                         ...activeSession,
                         generalNotes: e.target.value,
+                        manualVoiceNotes: '',
                       })
                     }
-                    placeholder={
-                      lang === 'ru'
-                        ? 'Запишите техники Masterson Method, реакции, релизы и наблюдения по сессии...'
-                        : 'Record Masterson Method techniques applied, palpation shifts, release signs, and general observations...'
+                    placeholder={t.manualNotesPlaceholder}
+                    className="w-full rounded-xl border border-slate-300 bg-[#FAF9F6] p-3 text-xs text-slate-900 leading-relaxed focus:border-[#2B4C3F] focus:outline-none"
+                  />
+                </div>
+
+                {/* 2. Clearly Separated Owner Care Notes */}
+                <div className="space-y-1.5 pt-2 border-t border-slate-200">
+                  <label
+                    htmlFor="owner-care-notes"
+                    className="block text-xs md:text-sm font-bold text-amber-900"
+                  >
+                    {t.ownerCareNotesLabel}
+                  </label>
+                  <textarea
+                    id="owner-care-notes"
+                    data-testid="owner-care-notes-input"
+                    rows={3}
+                    value={ownerCareNotesValue}
+                    onChange={(e) =>
+                      void persistSessionUpdate(
+                        {
+                          ...activeSession,
+                          reportSections: {
+                            ...activeSession.reportSections,
+                            postSessionCareNotes: e.target.value,
+                          },
+                        },
+                        false
+                      )
                     }
-                    className="w-full flex-1 rounded-lg border border-slate-300 bg-[#FAF9F6] p-3 text-xs text-slate-900 leading-relaxed focus:border-[#2B4C3F] focus:outline-none"
+                    placeholder={t.ownerCarePlaceholder}
+                    className="w-full rounded-xl border border-amber-300/90 bg-amber-50/40 p-3 text-xs text-slate-900 leading-relaxed focus:border-[#2B4C3F] focus:outline-none"
                   />
                 </div>
 
@@ -1582,6 +1541,235 @@ export default function App() {
                   {t.certDisclaimer}
                 </div>
               </div>
+            </section>
+
+            {/* COLLAPSIBLE HORSE & SESSION METADATA SHEET HEADER CARD (Collapsed by default on mobile) */}
+            <section className="rounded-xl border border-slate-300 bg-white p-4 shadow-xs">
+              <button
+                type="button"
+                data-testid="toggle-session-metadata-btn"
+                onClick={() => setIsSessionMetaExpanded((v) => !v)}
+                className="w-full flex items-center justify-between gap-3 text-left cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-9 rounded-full border-2 border-[#2B4C3F] bg-[#FAF9F6] flex flex-col items-center justify-center shrink-0 text-[#2B4C3F]">
+                    <span className="text-[6.5px] font-bold tracking-widest uppercase">
+                      MASTERSON
+                    </span>
+                    <span className="text-[8px] font-serif font-bold">METHOD</span>
+                  </div>
+                  <div>
+                    <h2 className="text-sm md:text-base font-editorial font-bold text-[#1E2421]">
+                      {activeHorse.name} · {t.sessionNum} #{activeSession.sessionNumber} ({activeSession.date})
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      {lang === 'ru'
+                        ? 'Данные лошади, владельца и практика для отчета A4'
+                        : 'Horse profile, owner & practitioner details for A4 report'}
+                    </p>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#2B4C3F]">
+                  <span>
+                    {isSessionMetaExpanded
+                      ? lang === 'ru'
+                        ? 'Скрыть'
+                        : 'Hide'
+                      : lang === 'ru'
+                        ? 'Изменить поля'
+                        : 'Edit Details'}
+                  </span>
+                  {isSessionMetaExpanded ? (
+                    <ChevronUp className="w-4 h-4" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4" />
+                  )}
+                </span>
+              </button>
+
+              {isSessionMetaExpanded && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-4 mt-3 border-t border-slate-200">
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
+                      {t.studentLabel}
+                    </label>
+                    <input
+                      type="text"
+                      value={activeSession.practitioner}
+                      onChange={(e) =>
+                        void persistSessionUpdate({
+                          ...activeSession,
+                          practitioner: e.target.value,
+                        })
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
+                      {t.caseStudyNum}
+                    </label>
+                    <input
+                      type="text"
+                      value={activeSession.caseStudyNumber}
+                      onChange={(e) =>
+                        void persistSessionUpdate({
+                          ...activeSession,
+                          caseStudyNumber: e.target.value,
+                        })
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-tabular font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
+                      {t.sessionNum}
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={activeSession.sessionNumber}
+                      onChange={(e) =>
+                        void persistSessionUpdate({
+                          ...activeSession,
+                          sessionNumber: Math.max(1, Number(e.target.value) || 1),
+                        })
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-tabular font-bold text-[#1E3A8A] focus:border-[#2B4C3F] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
+                      {t.dateLabel}
+                    </label>
+                    <input
+                      type="date"
+                      value={activeSession.date}
+                      onChange={(e) =>
+                        void persistSessionUpdate({
+                          ...activeSession,
+                          date: e.target.value,
+                        })
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-tabular font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
+                      {t.horseLabel}
+                    </label>
+                    <input
+                      type="text"
+                      value={activeHorse.name}
+                      onChange={(e) =>
+                        void persistHorseUpdate({
+                          ...activeHorse,
+                          name: e.target.value,
+                        })
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-semibold text-[#1E3A8A] focus:border-[#2B4C3F] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
+                      {t.ageLabel}
+                    </label>
+                    <input
+                      type="text"
+                      value={activeHorse.age}
+                      onChange={(e) =>
+                        void persistHorseUpdate({
+                          ...activeHorse,
+                          age: e.target.value,
+                        })
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-tabular font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
+                      {t.breedLabel}
+                    </label>
+                    <input
+                      type="text"
+                      value={activeHorse.breed}
+                      onChange={(e) =>
+                        void persistHorseUpdate({
+                          ...activeHorse,
+                          breed: e.target.value,
+                        })
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
+                      {t.jobLabel}
+                    </label>
+                    <input
+                      type="text"
+                      value={activeHorse.job}
+                      onChange={(e) =>
+                        void persistHorseUpdate({
+                          ...activeHorse,
+                          job: e.target.value,
+                        })
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-semibold text-[#1E3A8A] focus:border-[#2B4C3F] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
+                      {t.ownerLabel}
+                    </label>
+                    <input
+                      type="text"
+                      value={activeHorse.owner}
+                      onChange={(e) =>
+                        void persistHorseUpdate({
+                          ...activeHorse,
+                          owner: e.target.value,
+                        })
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
+                      {t.contactLabel}
+                    </label>
+                    <input
+                      type="text"
+                      value={activeHorse.contactInfo}
+                      onChange={(e) =>
+                        void persistHorseUpdate({
+                          ...activeHorse,
+                          contactInfo: e.target.value,
+                        })
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
+                      {t.durationLabel}
+                    </label>
+                    <input
+                      type="text"
+                      value={activeSession.duration}
+                      onChange={(e) =>
+                        void persistSessionUpdate({
+                          ...activeSession,
+                          duration: e.target.value,
+                        })
+                      }
+                      className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] px-2.5 py-1.5 font-tabular font-medium text-[#1E2421] focus:border-[#2B4C3F] focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
             </section>
           </div>
         ) : activeTab === 'horses' ? (
@@ -1629,7 +1817,7 @@ export default function App() {
             }}
           />
         ) : (
-          /* TAB 3: STRUCTURED REPORT & PRINT-READY A4 PDF EXPORT */
+          /* TAB 3: STRUCTURED REPORT & GENUINE OFFLINE A4 PDF EXPORT */
           <SessionReportAndPdfView
             horse={activeHorse}
             session={activeSession}

@@ -46,3 +46,46 @@ test('rejects invalid JSON or duplicate IDs during backup validation', () => {
     assert.equal(res.reason, 'corrupt-records');
   }
 });
+
+test('preserves expanded Masterson taxonomy (yawnCount, resistanceSigns, techniques) and unified notes across backup round-trip', () => {
+  const horse = createDemoHorse();
+  const session = createDemoSession();
+  session.evaluationTable.poll_top_atlas.left = {
+    ...session.evaluationTable.poll_top_atlas.left,
+    reaction: 2,
+    restriction: true,
+    released: true,
+    releaseSigns: ['Yawn', 'Blink / Soft eye', 'Weight shift'],
+    yawnCount: 4,
+    resistanceSigns: ['Bracing / Guarding', 'Head toss / Pull away'],
+    techniques: ['Poll / Atlas', 'Lateral Cervical Flexion'],
+    note: 'Reassessed after Poll release',
+  };
+  session.generalNotes = 'Unified session notes with Cyrillic: Спокойный выдох.';
+  session.reportSections.postSessionCareNotes = '24h turnout and light hand-walking.';
+
+  const json = serializeBackup({
+    horses: [horse],
+    sessions: [session],
+    voiceClips: [],
+    language: 'en',
+  });
+
+  const parsed = parseBackup(json);
+  assert.equal(parsed.ok, true);
+  if (parsed.ok) {
+    const restoredObs = parsed.backup.data.sessions[0].evaluationTable.poll_top_atlas.left;
+    assert.equal(restoredObs.yawnCount, 4);
+    assert.deepEqual(restoredObs.resistanceSigns, ['Bracing / Guarding', 'Head toss / Pull away']);
+    assert.deepEqual(restoredObs.techniques, ['Poll / Atlas', 'Lateral Cervical Flexion']);
+    assert.equal(
+      parsed.backup.data.sessions[0].generalNotes,
+      'Unified session notes with Cyrillic: Спокойный выдох.'
+    );
+    assert.equal(
+      parsed.backup.data.sessions[0].reportSections.postSessionCareNotes,
+      '24h turnout and light hand-walking.'
+    );
+  }
+});
+
