@@ -50,7 +50,9 @@ export const ZoneReferencePanel: React.FC<{
   areaId: AnatomicalAreaId;
   tableState: EvaluationTableState;
   lang: Language;
-}> = ({ areaId, tableState, lang }) => {
+  /** Cap the height with its own scroll (inside the zone editor); off in a dedicated sheet */
+  scrollable?: boolean;
+}> = ({ areaId, tableState, lang, scrollable = true }) => {
   const ru = lang === 'ru';
   const links = getLineLinksForArea(areaId);
   const tech = getTechniquesForArea(areaId);
@@ -61,7 +63,7 @@ export const ZoneReferencePanel: React.FC<{
   return (
     <div
       data-testid="zone-reference-panel"
-      className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white/70 p-2 text-xs text-slate-700 space-y-2.5"
+      className={`mt-2 ${scrollable ? 'max-h-56 overflow-y-auto ' : ''}rounded-lg border border-slate-200 bg-white/70 p-2 text-xs text-slate-700 space-y-2.5`}
     >
       {/* Myofascial lines */}
       <section data-testid="zone-ref-lines">
