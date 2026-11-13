@@ -278,3 +278,27 @@ export function appendPatternToNotes(notes: string, match: PatternMatch, lang: L
   const line = buildPatternNoteLine(match, lang);
   return notes.trim() ? `${notes.replace(/\s+$/, '')}\n${line}` : line;
 }
+
+const PATTERN_TAG_PREFIXES = [patternNoteTag(0, 'ru'), patternNoteTag(0, 'en')].map((tag) =>
+  tag.slice(0, tag.indexOf('0'))
+);
+
+/** True for a notes line produced by appendPatternToNotes (optional leading emoji/space). */
+export function isPatternNoteLine(line: string): boolean {
+  const text = line.replace(/^[\s\p{Extended_Pictographic}️‍]+/u, '');
+  return PATTERN_TAG_PREFIXES.some((prefix) => text.startsWith(prefix));
+}
+
+/**
+ * Removes the technical "[Паттерн №N] …" / "[Pattern #N] …" lines from notes (for the
+ * owner PDF) and collapses the blank runs they leave. Other lines are untouched.
+ */
+export function stripPatternNoteLines(notes: string): string {
+  if (!notes) return notes;
+  return notes
+    .split(/\r?\n/)
+    .filter((line) => !isPatternNoteLine(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}

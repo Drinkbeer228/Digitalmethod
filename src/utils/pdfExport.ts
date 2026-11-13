@@ -21,6 +21,7 @@ import {
 } from '../types';
 import { buildReportFromSession, getUnifiedSessionNotes } from './reportGenerator';
 import { DEFAULT_PDF_EXPORT_OPTIONS, PdfExportOptions } from './pdfExportOptions';
+import { stripPatternNoteLines } from './patternDetection';
 import {
   buildMastersonPlan,
   formatPressureRange,
@@ -615,6 +616,14 @@ export function makePdfTextSanitizer(fonts: PDFFont[]): (text: string) => string
   };
 }
 
+/**
+ * ASCII-folds the few non-ASCII marks used in PDF-only reference text (ø, ®) so they print
+ * cleanly at small sizes; the app UI keeps the original spelling.
+ */
+export function toPdfAscii(text: string): string {
+  return text.replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/®/g, '(R)');
+}
+
 function wrapTextToLines(
   text: string,
   font: PDFFont,
@@ -933,8 +942,8 @@ export async function generateSessionPdfBytes(
 
   const docTitle =
     lang === 'ru'
-      ? 'ОТЧЕТ О СЕССИИ БОДИВОРКА ЛОШАДИ (MASTERSON METHOD)'
-      : 'MASTERSON METHOD EQUINE BODYWORK — SESSION REPORT';
+      ? 'ОТЧЕТ О СЕССИИ БОДИВОРКА ЛОШАДИ'
+      : 'EQUINE BODYWORK — SESSION REPORT';
 
   page1.drawText(docTitle, {
     x: margin + 12,
@@ -962,7 +971,7 @@ export async function generateSessionPdfBytes(
   // Clean Metadata Grid (Omits empty optional fields instead of printing blank underscores)
   const metaPairs: Array<{ label: string; value: string }> = [
     { label: t.horseLabel, value: horse.name || 'Unnamed Horse' },
-    { label: t.sessionNum, value: `#${session.sessionNumber}` },
+    { label: t.sessionNum, value: `${session.sessionNumber}` },
     { label: t.dateLabel, value: session.date },
   ];
   if (horse.breed?.trim()) metaPairs.push({ label: t.breedLabel, value: horse.breed.trim() });
@@ -1219,7 +1228,9 @@ export async function generateSessionPdfBytes(
   });
 
   // Page footers are drawn at the end, once the total page count is known
-  const footerPrefix = `${horse.name} · ${t.sessionNum} #${session.sessionNumber} · ${session.date}`;
+  // t.sessionNum already ends with "№" / "#": "Сессия №2", "Session #2"
+  const sessionLabel = `${t.sessionNum}${session.sessionNumber}`;
+  const footerPrefix = [horse.name, sessionLabel, session.date].filter(Boolean).join(' · ');
 
   // =========================================================================
   // PAGE 2: UNIFIED EVALUATED ZONES SUMMARY TABLE & SESSION NOTES
@@ -1546,13 +1557,13 @@ export async function generateSessionPdfBytes(
           : 'No marked zones on myofascial lines.',
       '',
       lang === 'ru'
-        ? 'Число отмеченных зон линии — не мера напряжения. Источники: Elbrønd & Schultz 2015 (Medical Research Archives 3); Elbrønd & Schultz 2021 (Open Journal of Veterinary Medicine 11(1)).'
-        : 'The count of marked zones is not a measure of tension. Sources: Elbrønd & Schultz 2015 (Medical Research Archives 3); Elbrønd & Schultz 2021 (Open Journal of Veterinary Medicine 11(1)).',
+        ? 'Число отмеченных зон линии — не мера напряжения. Источники: Elbrond & Schultz 2015 (Medical Research Archives 3); Elbrond & Schultz 2021 (Open Journal of Veterinary Medicine 11(1)).'
+        : 'The count of marked zones is not a measure of tension. Sources: Elbrond & Schultz 2015 (Medical Research Archives 3); Elbrond & Schultz 2021 (Open Journal of Veterinary Medicine 11(1)).',
     ].join('\n');
     drawNarrativeSection(
       lang === 'ru'
-        ? 'Миофасциальные линии (Elbrønd & Schultz)'
-        : 'Myofascial Kinetic Lines (Elbrønd & Schultz)',
+        ? 'Миофасциальные линии (Elbrond & Schultz)'
+        : 'Myofascial Kinetic Lines (Elbrond & Schultz)',
       body
     );
   }
@@ -1561,7 +1572,11 @@ export async function generateSessionPdfBytes(
   if (options.notes) {
     const unifiedSessionText =
       getUnifiedSessionNotes(session) || syncedSections.sessionNotes;
-    drawNarrativeSection(t.sec5Title, unifiedSessionText);
+    // Owner version: drop the technical "[Паттерн №N]" lines added from Clinical Insights
+    const notesText = options.patternNotes
+      ? unifiedSessionText
+      : stripPatternNoteLines(unifiedSessionText);
+    if (notesText.trim()) drawNarrativeSection(t.sec5Title, notesText);
   }
 
   // 4. Before / After Photos (current flow page when it fits, otherwise a dedicated page;
@@ -1632,7 +1647,7 @@ export async function generateSessionPdfBytes(
 
   // Footers on every page: "<horse> · Session #N · date · Page X / Y"
   const allPages = pdfDoc.getPages();
-  const disclaimerLines = wrapTextToLines(t.methodDisclaimer, regular, 5.4, contentW);
+  const disclaimerLines = wrapTextToLines(toPdfAscii(t.methodDisclaimer), regular, 5.4, contentW);
   allPages.forEach((pg, idx) => {
     pg.drawText(`${footerPrefix} · Page ${idx + 1} / ${allPages.length}`, {
       x: margin,

@@ -13,6 +13,8 @@ export interface PdfExportOptions {
   ownerCare: boolean;
   /** Practitioner session notes */
   notes: boolean;
+  /** Technical "[Паттерн №N]" lines inside the notes (Clinical Insights) */
+  patternNotes: boolean;
   /** Before / after photos (only when photos are attached) */
   photos: boolean;
 }
@@ -26,6 +28,7 @@ export const PDF_PRESETS: Record<PdfPresetId, PdfExportOptions> = {
     mastersonPlan: false,
     ownerCare: true,
     notes: true,
+    patternNotes: false,
     photos: true,
   },
   specialist: {
@@ -34,6 +37,7 @@ export const PDF_PRESETS: Record<PdfPresetId, PdfExportOptions> = {
     mastersonPlan: true,
     ownerCare: true,
     notes: true,
+    patternNotes: true,
     photos: true,
   },
 };
@@ -46,6 +50,7 @@ export const PDF_OPTION_KEYS: Array<keyof PdfExportOptions> = [
   'mastersonPlan',
   'ownerCare',
   'notes',
+  'patternNotes',
   'photos',
 ];
 
@@ -82,6 +87,10 @@ export function loadPdfExportOptions(
     for (const key of PDF_OPTION_KEYS) {
       const value = (parsed as Record<string, unknown>)[key];
       if (typeof value === 'boolean') result[key] = value;
+    }
+    // Saved before patternNotes existed: keep a specialist choice a specialist choice
+    if (typeof (parsed as Record<string, unknown>).patternNotes !== 'boolean') {
+      result.patternNotes = result.myofascial && result.mastersonPlan;
     }
   } catch {
     // Corrupt JSON or blocked storage: use defaults

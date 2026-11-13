@@ -325,7 +325,8 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
       ].join('\n'),
     };
 
-    const longBytes = await generateSessionPdfBytes(horse, session, 'en');
+    // Specialist preset keeps the "[Pattern #N]" line that carries the end marker
+    const longBytes = await generateSessionPdfBytes(horse, session, 'en', [], PDF_PRESETS.specialist);
     const longDoc = await PDFDocument.load(longBytes);
     assert.ok(longDoc.getPageCount() > 2, `expected > 2 pages, got ${longDoc.getPageCount()}`);
     assert.ok(longBytes.byteLength > baseline.byteLength, 'overflowing notes should add content');
@@ -354,7 +355,7 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
         imageDataUrl: TEST_JPEG_LANDSCAPE_DATA_URL,
       },
     ];
-    const withPhotos = await generateSessionPdfBytes(horse, session, 'ru', photos);
+    const withPhotos = await generateSessionPdfBytes(horse, session, 'ru', photos, PDF_PRESETS.specialist);
     const photoDoc = await PDFDocument.load(withPhotos);
     assert.ok(photoDoc.getPageCount() >= 3);
     const photoText = extractPdfText(withPhotos);
@@ -492,6 +493,47 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
     assert.ok(withPhotos.byteLength > photosOff.byteLength, 'photo band omitted when photos are off');
     const photosOffText = extractPdfText(photosOff);
     if (photosOffText !== null) assert.ok(!photosOffText.includes('Photos: Before & After'));
+  });
+
+  it('owner PDF drops [Pattern #N] lines; specialist keeps them; neutral title, clean footer and ASCII disclaimer', async () => {
+    const { horse, session } = makeTestFixtures();
+    session.generalNotes = [
+      'Ordinary practitioner line OWNER-KEEP-55',
+      '💡 [Pattern #10] Poll – sacrum axial link (L) — zones: #2 Poll (L)',
+      '[Паттерн №4] Диагональный паттерн (Л/П)',
+    ].join('\n');
+    session.manualVoiceNotes = '';
+
+    const owner = await generateSessionPdfBytes(horse, session, 'en', [], PDF_PRESETS.owner);
+    const specialist = await generateSessionPdfBytes(horse, session, 'en', [], PDF_PRESETS.specialist);
+    assert.equal((await PDFDocument.load(owner)).getPageCount(), 2);
+
+    const ownerText = extractPdfText(owner);
+    const specText = extractPdfText(specialist);
+    if (ownerText !== null && specText !== null) {
+      assert.ok(ownerText.includes('OWNER-KEEP-55'));
+      assert.ok(!ownerText.includes('[Pattern #10]'));
+      assert.ok(!ownerText.includes('[Паттерн №4]'));
+      assert.ok(specText.includes('[Pattern #10]'));
+      assert.ok(specText.includes('[Паттерн №4]'));
+
+      for (const text of [ownerText, specText]) {
+        assert.ok(!text.includes('MASTERSON METHOD'), 'neutral page-1 title');
+        assert.ok(text.includes('EQUINE BODYWORK — SESSION REPORT'));
+        assert.ok(text.includes('Session #2 · 2026-04-17 · Page 1 / '), 'footer: single "#", separator before date');
+        assert.ok(!/#\s*#/.test(text));
+        assert.ok(text.includes('Elbrond') && text.includes('(R)'), 'ASCII disclaimer');
+        assert.ok(!text.includes('Elbrønd') && !text.includes('®'));
+      }
+    }
+
+    const ru = extractPdfText(await generateSessionPdfBytes(horse, session, 'ru', [], PDF_PRESETS.owner));
+    if (ru !== null) {
+      assert.ok(ru.includes('ОТЧЕТ О СЕССИИ БОДИВОРКА ЛОШАДИ'));
+      assert.ok(ru.includes('Сессия №2 · 2026-04-17'));
+      assert.ok(!ru.includes('№ #') && !ru.includes('№#'));
+      assert.ok(!ru.includes('[Паттерн №4]'));
+    }
   });
 
   it('groups photos by kind, oldest first, max two per kind', () => {

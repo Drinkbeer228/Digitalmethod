@@ -68,3 +68,19 @@ test('blocked storage never throws', () => {
   assert.doesNotThrow(() => savePdfExportOptions(PDF_PRESETS.specialist, throwing));
   assert.deepEqual(loadPdfExportOptions(null), DEFAULT_PDF_EXPORT_OPTIONS);
 });
+
+test('pattern lines: off for owner, on for specialist; older saved specialist choice stays specialist', () => {
+  assert.equal(PDF_PRESETS.owner.patternNotes, false);
+  assert.equal(PDF_PRESETS.specialist.patternNotes, true);
+  const { patternNotes: _p, ...oldSpecialist } = PDF_PRESETS.specialist;
+  const oldOwner = { ...PDF_PRESETS.owner } as Partial<typeof PDF_PRESETS.owner>;
+  delete oldOwner.patternNotes;
+  const loadedSpec = loadPdfExportOptions(
+    memoryStorage({ [PDF_EXPORT_OPTIONS_STORAGE_KEY]: JSON.stringify(oldSpecialist) })
+  );
+  const loadedOwner = loadPdfExportOptions(
+    memoryStorage({ [PDF_EXPORT_OPTIONS_STORAGE_KEY]: JSON.stringify(oldOwner) })
+  );
+  assert.equal(detectPreset(loadedSpec), 'specialist');
+  assert.equal(detectPreset(loadedOwner), 'owner');
+});
