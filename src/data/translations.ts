@@ -122,11 +122,16 @@ export interface TaxonomyChipItem {
   en: string;
   ru: string;
   category?: 'subtle' | 'pre_release' | 'release' | 'resistance' | 'technique';
+  /**
+   * Quick-chip group in the zone editor. 'response' signs (the horse is processing)
+   * are recorded without marking the zone Released; 'release' signs mark it Released.
+   */
+  group?: 'response' | 'release';
   supportsCounter?: boolean;
 }
 
 /**
- * 8 Always-Visible Quick Response/Release Chips (1-tap toggle in Bottom Sheet)
+ * 8 always-visible quick chips in the zone editor, split into Response and Release groups
  */
 export const QUICK_RELEASE_CHIPS: TaxonomyChipItem[] = [
   {
@@ -134,30 +139,35 @@ export const QUICK_RELEASE_CHIPS: TaxonomyChipItem[] = [
     en: 'Blink / Soft eye',
     ru: 'Моргание / Мягкий глаз',
     category: 'subtle',
+    group: 'response',
   },
   {
     id: 'lip_twitch',
     en: 'Lip twitch',
     ru: 'Подергивание губы',
     category: 'subtle',
+    group: 'response',
   },
   {
     id: 'fidgeting',
     en: 'Fidgeting',
     ru: 'Суетливость (перед релизом)',
     category: 'pre_release',
+    group: 'response',
   },
   {
     id: 'lick_chew',
     en: 'Lick & chew',
     ru: 'Облизывание и отжевывание',
     category: 'release',
+    group: 'release',
   },
   {
     id: 'yawn',
     en: 'Yawn',
     ru: 'Зевание',
     category: 'release',
+    group: 'release',
     supportsCounter: true,
   },
   {
@@ -165,18 +175,21 @@ export const QUICK_RELEASE_CHIPS: TaxonomyChipItem[] = [
     en: 'Snort / Sneeze',
     ru: 'Отфыркивание / Чих',
     category: 'release',
+    group: 'release',
   },
   {
     id: 'head_drop',
     en: 'Head drop',
     ru: 'Опускание головы',
     category: 'release',
+    group: 'release',
   },
   {
     id: 'deep_sigh_shake',
     en: 'Deep sigh / Shake',
     ru: 'Глубокий выдох / Встряхивание',
     category: 'release',
+    group: 'release',
   },
 ];
 

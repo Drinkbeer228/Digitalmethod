@@ -205,16 +205,11 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
     assert.ok(reportRu.releaseSignsObserved.includes('Зажатость / Охрана зоны'));
   });
 
-  it('generates a valid 2-page A4 PDF in Certification and Owner modes with Latin & Cyrillic text', async () => {
+  it('generates a valid 2-page A4 PDF with Latin & Cyrillic text (no report mode argument)', async () => {
     const { horse, session } = makeTestFixtures();
 
-    // 1. Certification mode (English)
-    const certBytesEn = await generateSessionPdfBytes(
-      horse,
-      session,
-      'certification',
-      'en'
-    );
+    // 1. English
+    const certBytesEn = await generateSessionPdfBytes(horse, session, 'en');
     assert.ok(certBytesEn instanceof Uint8Array);
     assert.ok(certBytesEn.byteLength > 10_000, 'Expected non-trivial PDF byte size');
     const headerStr = new TextDecoder().decode(certBytesEn.slice(0, 5));
@@ -226,11 +221,16 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
     assert.ok(Math.abs(page1Size.width - 595.28) < 1);
     assert.ok(Math.abs(page1Size.height - 841.89) < 1);
 
-    // 2. Owner mode (Russian / Cyrillic)
-    const ownerBytesRu = await generateSessionPdfBytes(horse, session, 'owner', 'ru');
+    // 2. Russian / Cyrillic
+    const ownerBytesRu = await generateSessionPdfBytes(horse, session, 'ru');
     assert.ok(ownerBytesRu.byteLength > 10_000);
     const loadedOwnerDoc = await PDFDocument.load(ownerBytesRu);
     assert.equal(loadedOwnerDoc.getPageCount(), 2);
+
+    // 3. Language defaults to English when omitted
+    assert.equal(generateSessionPdfBytes.length, 2);
+    const defaultBytes = await generateSessionPdfBytes(horse, session);
+    assert.equal((await PDFDocument.load(defaultBytes)).getPageCount(), 2);
 
     const fileName = buildPdfFileName(horse, session);
     assert.ok(fileName.startsWith('Masterson_Report_'));
@@ -275,8 +275,8 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
       },
     ];
 
-    const plain = await generateSessionPdfBytes(horse, session, 'unified', 'en');
-    const withPhotos = await generateSessionPdfBytes(horse, session, 'unified', 'ru', photos);
+    const plain = await generateSessionPdfBytes(horse, session, 'en');
+    const withPhotos = await generateSessionPdfBytes(horse, session, 'ru', photos);
     const doc = await PDFDocument.load(withPhotos);
     const pages = doc.getPageCount();
     assert.ok(pages === 2 || pages === 3, `expected 2–3 pages, got ${pages}`);

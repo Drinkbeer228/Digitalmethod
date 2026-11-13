@@ -140,7 +140,7 @@ async function renderBrowserDiagramCompositePng(
       });
       ctx.closePath();
       ctx.fillStyle = region.pastelFill;
-      ctx.globalAlpha = 0.62;
+      ctx.globalAlpha = 0.38;
       ctx.fill();
       ctx.strokeStyle = region.pastelStroke;
       ctx.globalAlpha = 0.85;
@@ -837,7 +837,6 @@ async function drawPhotoBand(
 export async function generateSessionPdfBytes(
   horse: HorseProfile,
   session: BodyworkSession,
-  _mode: 'unified' | 'certification' | 'owner' = 'unified',
   lang: Language = 'en',
   photos: SessionPhoto[] = []
 ): Promise<Uint8Array> {
@@ -1459,11 +1458,10 @@ export function buildPdfFileName(horse: HorseProfile, session: BodyworkSession):
 export async function buildSessionPdfFile(
   horse: HorseProfile,
   session: BodyworkSession,
-  mode: 'unified' | 'certification' | 'owner' = 'unified',
   lang: Language = 'en',
   photos: SessionPhoto[] = []
 ): Promise<File> {
-  const bytes = await generateSessionPdfBytes(horse, session, mode, lang, photos);
+  const bytes = await generateSessionPdfBytes(horse, session, lang, photos);
   const filename = buildPdfFileName(horse, session);
   const bufferSlice = bytes.buffer.slice(
     bytes.byteOffset,
