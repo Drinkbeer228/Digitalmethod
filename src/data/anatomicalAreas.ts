@@ -28,10 +28,10 @@ export const ANATOMICAL_REGIONS: AnatomicalRegionMeta[] = [
     id: 'head_poll',
     nameEn: 'Head & Poll',
     nameRu: 'Голова и затылок',
-    pastelFill: '#F2E8D5',
-    pastelStroke: '#CBB894',
-    activeFill: '#EAD8B8',
-    activeStroke: '#A68E63',
+    pastelFill: '#FDE68A',
+    pastelStroke: '#D97706',
+    activeFill: '#FCD34D',
+    activeStroke: '#B45309',
     leftPolygons: [
       [
         { x: 0.134, y: 0.042 },
@@ -65,10 +65,10 @@ export const ANATOMICAL_REGIONS: AnatomicalRegionMeta[] = [
     id: 'neck_shoulder',
     nameEn: 'Neck & Shoulder',
     nameRu: 'Шея и плечо',
-    pastelFill: '#DCECE2',
-    pastelStroke: '#9CC0AA',
-    activeFill: '#C6E2D1',
-    activeStroke: '#6B9E80',
+    pastelFill: '#A7F3D0',
+    pastelStroke: '#059669',
+    activeFill: '#6EE7B7',
+    activeStroke: '#047857',
     leftPolygons: [
       [
         { x: 0.198, y: 0.082 },
@@ -106,10 +106,10 @@ export const ANATOMICAL_REGIONS: AnatomicalRegionMeta[] = [
     id: 'back_torso',
     nameEn: 'Back & Torso',
     nameRu: 'Спина и корпус',
-    pastelFill: '#DEE8F2',
-    pastelStroke: '#9EB6CE',
-    activeFill: '#C8DAEC',
-    activeStroke: '#6D92B8',
+    pastelFill: '#BFDBFE',
+    pastelStroke: '#2563EB',
+    activeFill: '#93C5FD',
+    activeStroke: '#1D4ED8',
     leftPolygons: [
       [
         { x: 0.478, y: 0.262 },
@@ -140,10 +140,10 @@ export const ANATOMICAL_REGIONS: AnatomicalRegionMeta[] = [
     id: 'pelvis_hindquarters',
     nameEn: 'Pelvis & Hindquarters',
     nameRu: 'Таз и задний отдел',
-    pastelFill: '#EAE0EE',
-    pastelStroke: '#BBA7C4',
-    activeFill: '#DECBE6',
-    activeStroke: '#967AA3',
+    pastelFill: '#FED7AA',
+    pastelStroke: '#EA580C',
+    activeFill: '#FDBA74',
+    activeStroke: '#C2410C',
     leftPolygons: [
       [
         { x: 0.692, y: 0.264 },
@@ -176,10 +176,10 @@ export const ANATOMICAL_REGIONS: AnatomicalRegionMeta[] = [
     id: 'limbs_joints',
     nameEn: 'Limbs & Joints',
     nameRu: 'Конечности и суставы',
-    pastelFill: '#EAE5DC',
-    pastelStroke: '#BEB5A4',
-    activeFill: '#DFD7C8',
-    activeStroke: '#998D77',
+    pastelFill: '#D9F99D',
+    pastelStroke: '#65A30D',
+    activeFill: '#BEF264',
+    activeStroke: '#4D7C0F',
     leftPolygons: [
       // Forelimbs
       [
@@ -208,6 +208,86 @@ export const ANATOMICAL_REGIONS: AnatomicalRegionMeta[] = [
   },
 ];
 
+export type BodyPartFilterId = 'all' | 'head' | 'torso' | 'front' | 'hind';
+
+export interface BodyPartFilterMeta {
+  id: BodyPartFilterId;
+  labelEn: string;
+  labelRu: string;
+  areaIds: AnatomicalAreaId[];
+}
+
+export const BODY_PART_FILTERS: BodyPartFilterMeta[] = [
+  {
+    id: 'all',
+    labelEn: 'All',
+    labelRu: 'Весь',
+    areaIds: [
+      'poll_front_atlas',
+      'poll_top_atlas',
+      'tmj',
+      'neck',
+      'shoulder',
+      'withers',
+      'hoof_point',
+      'top_of_spine',
+      'saddle_outline',
+      'ribs',
+      'lumbar',
+      'gluteals',
+      'sacrum',
+      'hamstrings',
+      'front_splints',
+      'knee',
+      'front_fetlock',
+      'hock',
+      'hind_fetlock',
+    ],
+  },
+  {
+    id: 'head',
+    labelEn: 'Head',
+    labelRu: 'Голова',
+    areaIds: ['poll_front_atlas', 'poll_top_atlas', 'tmj', 'neck'],
+  },
+  {
+    id: 'torso',
+    labelEn: 'Torso',
+    labelRu: 'Торс',
+    areaIds: [
+      'shoulder',
+      'withers',
+      'top_of_spine',
+      'saddle_outline',
+      'ribs',
+      'lumbar',
+      'gluteals',
+      'sacrum',
+    ],
+  },
+  {
+    id: 'front',
+    labelEn: 'Front',
+    labelRu: 'Перед',
+    areaIds: ['hoof_point', 'front_splints', 'knee', 'front_fetlock'],
+  },
+  {
+    id: 'hind',
+    labelEn: 'Hind',
+    labelRu: 'Зад',
+    areaIds: ['hamstrings', 'hock', 'hind_fetlock'],
+  },
+];
+
+export function matchesBodyPartFilter(
+  areaId: AnatomicalAreaId,
+  filterId: BodyPartFilterId = 'all'
+): boolean {
+  if (filterId === 'all') return true;
+  const found = BODY_PART_FILTERS.find((f) => f.id === filterId);
+  return found ? found.areaIds.includes(areaId) : true;
+}
+
 export type BodySegmentId = 'head_neck' | 'torso_pelvis' | 'limbs';
 
 export interface BodySegmentMeta {
@@ -232,9 +312,9 @@ export const BODY_SEGMENTS: BodySegmentMeta[] = [
     nameRu: 'Голова и шея',
     shortLabelRu: 'Голова и шея',
     areaIds: ['poll_front_atlas', 'poll_top_atlas', 'tmj', 'neck'],
-    pastelFill: '#F2E8D5',
-    pastelStroke: '#CBB894',
-    activeFill: '#DCECE2',
+    pastelFill: '#FDE68A',
+    pastelStroke: '#D97706',
+    activeFill: '#FCD34D',
     activeStroke: '#2B4C3F',
     leftPolygons: [
       [
@@ -268,9 +348,9 @@ export const BODY_SEGMENTS: BodySegmentMeta[] = [
       'gluteals',
       'sacrum',
     ],
-    pastelFill: '#DEE8F2',
-    pastelStroke: '#9EB6CE',
-    activeFill: '#C8DAEC',
+    pastelFill: '#BFDBFE',
+    pastelStroke: '#2563EB',
+    activeFill: '#93C5FD',
     activeStroke: '#2B4C3F',
     leftPolygons: [
       [
@@ -306,9 +386,9 @@ export const BODY_SEGMENTS: BodySegmentMeta[] = [
       'hock',
       'hind_fetlock',
     ],
-    pastelFill: '#EAE5DC',
-    pastelStroke: '#BEB5A4',
-    activeFill: '#DFD7C8',
+    pastelFill: '#D9F99D',
+    pastelStroke: '#65A30D',
+    activeFill: '#BEF264',
     activeStroke: '#2B4C3F',
     leftPolygons: [
       // Forelimbs + Hoof Point (#7, #15, #16, #17)

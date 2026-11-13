@@ -39,6 +39,7 @@ import {
   serializeBackup,
 } from './db/backup';
 import {
+  BodyPartFilterId,
   createEmptyEvaluationTable,
   syncAnnotationsWithTable,
   TOP_VIEW_ANCHORS,
@@ -54,9 +55,10 @@ import { EvaluationAudioNotesPanel } from './components/EvaluationAudioNotesPane
 import { HorsesAndBackupView } from './components/HorsesAndBackupView';
 import { OfflineConnectivityBanner, PWAInstallAction } from './pwa/PWAInstallBanner';
 import {
-  FileText,
+  Check,
   Mic,
   Redo2,
+  Save,
   Undo2,
 } from 'lucide-react';
 
@@ -94,6 +96,8 @@ export default function App() {
     side?: Side;
   } | null>(null);
   const [activeRegionFilter] = useState<AnatomicalRegionId | 'all'>('all');
+  const [bodyPartFilter, setBodyPartFilter] = useState<BodyPartFilterId>('all');
+  const [sessionSavedFeedback, setSessionSavedFeedback] = useState<boolean>(false);
 
   // Mobile (< 1024px) diagram view switcher ('left' | 'right' | 'top') & responsive breakpoint
   const [mobileActiveView, setMobileActiveView] = useState<'left' | 'right' | 'top'>('left');
@@ -962,11 +966,8 @@ export default function App() {
                 className="space-y-6"
               >
                 <div className="grid grid-cols-12 gap-5 items-start">
-                  {/* Left Profile Column */}
-                  <div className="col-span-4 rounded-xl border border-slate-300 bg-white p-3.5 shadow-2xs space-y-2 sticky top-24">
-                    <h2 className="text-xs font-bold uppercase tracking-wide text-[#2B4C3F] text-center">
-                      {t.leftProfileTitle}
-                    </h2>
+                  {/* Left Profile Column — No Title Banner or Zoom Row Above Image */}
+                  <div className="col-span-4 rounded-xl border border-slate-300 bg-white p-2.5 shadow-2xs sticky top-24">
                     <HorseSilhouetteSvg
                       view="left"
                       evaluationTable={activeSession.evaluationTable}
@@ -983,13 +984,15 @@ export default function App() {
                         setActiveTablePopover({ areaId, side })
                       }
                       activeRegionFilter={activeRegionFilter}
+                      bodyPartFilter={bodyPartFilter}
+                      onChangeBodyPartFilter={setBodyPartFilter}
                       showPastelZones={true}
                       showLandmarkNumbers={true}
                       lang={lang}
                     />
                   </div>
 
-                  {/* Center Full 19-Area Bilateral Table Column */}
+                  {/* Center Filtered Bilateral Table Column */}
                   <div className="col-span-4">
                     <CentralEvaluationTable
                       tableState={activeSession.evaluationTable}
@@ -1000,14 +1003,12 @@ export default function App() {
                       hoveredAreaTarget={hoveredAreaTarget}
                       onHoverArea={setHoveredAreaTarget}
                       activeRegionFilter={activeRegionFilter}
+                      bodyPartFilter={bodyPartFilter}
                     />
                   </div>
 
-                  {/* Right Profile Column */}
-                  <div className="col-span-4 rounded-xl border border-slate-300 bg-white p-3.5 shadow-2xs space-y-2 sticky top-24">
-                    <h2 className="text-xs font-bold uppercase tracking-wide text-[#2B4C3F] text-center">
-                      {t.rightProfileTitle}
-                    </h2>
+                  {/* Right Profile Column — No Title Banner or Zoom Row Above Image */}
+                  <div className="col-span-4 rounded-xl border border-slate-300 bg-white p-2.5 shadow-2xs sticky top-24">
                     <HorseSilhouetteSvg
                       view="right"
                       evaluationTable={activeSession.evaluationTable}
@@ -1024,6 +1025,8 @@ export default function App() {
                         setActiveTablePopover({ areaId, side })
                       }
                       activeRegionFilter={activeRegionFilter}
+                      bodyPartFilter={bodyPartFilter}
+                      onChangeBodyPartFilter={setBodyPartFilter}
                       showPastelZones={true}
                       showLandmarkNumbers={true}
                       lang={lang}
@@ -1104,21 +1107,16 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              /* MOBILE (< 1024px): Complete Horse Diagram at Top + Full 19-Area List Below with Natural Scrolling */
+              /* MOBILE (< 1024px): Complete Horse Diagram at Top (No Header Banner) + Filtered Zone List Below */
               <div
                 data-testid="mobile-full-horse-evaluation"
-                className="space-y-4"
+                className="space-y-3"
               >
                 {mobileActiveView !== 'top' ? (
                   <div
                     data-testid="mobile-above-fold-diagram"
-                    className="rounded-xl border border-slate-300 bg-white p-3 shadow-2xs space-y-2"
+                    className="rounded-xl border border-slate-300 bg-white p-2 shadow-2xs"
                   >
-                    <div className="text-xs font-bold uppercase tracking-wide text-[#2B4C3F] text-center">
-                      {mobileActiveView === 'left'
-                        ? t.leftProfileTitle
-                        : t.rightProfileTitle}
-                    </div>
                     <HorseSilhouetteSvg
                       view={mobileActiveView}
                       evaluationTable={activeSession.evaluationTable}
@@ -1135,6 +1133,8 @@ export default function App() {
                         setActiveTablePopover({ areaId, side })
                       }
                       activeRegionFilter={activeRegionFilter}
+                      bodyPartFilter={bodyPartFilter}
+                      onChangeBodyPartFilter={setBodyPartFilter}
                       showPastelZones={true}
                       showLandmarkNumbers={true}
                       lang={lang}
@@ -1212,7 +1212,7 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Full 19-Area List for Active Side (Left or Right) Directly Below */}
+                {/* Filtered Zone List for Active Side (Left or Right) Directly Below */}
                 <CentralEvaluationTable
                   tableState={activeSession.evaluationTable}
                   onUpdateCell={handleUpdateTableCell}
@@ -1222,28 +1222,43 @@ export default function App() {
                   hoveredAreaTarget={hoveredAreaTarget}
                   onHoverArea={setHoveredAreaTarget}
                   activeRegionFilter={activeRegionFilter}
+                  bodyPartFilter={bodyPartFilter}
                   mobileSingleSide={mobileActiveView === 'right' ? 'right' : 'left'}
                 />
               </div>
             )}
 
-            {/* Bottom Action Bar: Clean "View Session Summary & PDF" Button */}
-            <div className="pt-2 flex justify-center">
+            {/* Bottom Action Bar: Primary "Save Session" Button */}
+            <div className="pt-2 flex flex-col items-center gap-2">
               <button
                 type="button"
-                data-testid="view-session-summary-pdf-btn"
-                onClick={() => {
-                  setActiveTab('horses');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                data-testid="save-session-btn"
+                onClick={async () => {
+                  await persistSessionUpdate(activeSession);
+                  setSessionSavedFeedback(true);
+                  setTimeout(() => setSessionSavedFeedback(false), 3000);
                 }}
-                className="w-full sm:w-auto min-h-[48px] inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[#2B4C3F] hover:bg-[#223D32] text-white text-sm font-bold shadow-xs cursor-pointer transition-colors"
+                className={`w-full sm:w-auto min-h-[48px] inline-flex items-center justify-center gap-2 px-8 py-3 rounded-xl text-white text-sm font-bold shadow-xs cursor-pointer transition-colors ${
+                  sessionSavedFeedback
+                    ? 'bg-[#15803D] hover:bg-emerald-800'
+                    : 'bg-[#2B4C3F] hover:bg-[#223D32]'
+                }`}
               >
-                <FileText className="w-4 h-4" />
-                <span>
-                  {lang === 'ru'
-                    ? 'Просмотр сводки сессии и экспорт PDF'
-                    : 'View Session Summary & PDF'}
-                </span>
+                {sessionSavedFeedback ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span data-testid="save-session-feedback">
+                      {lang === 'ru' ? 'Сессия сохранена' : 'Session Saved'}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>
+                      {lang === 'ru' ? 'Сохранить сессию' : 'Save Session'}
+                    </span>
+                  </>
+                )}
               </button>
             </div>
           </div>

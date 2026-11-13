@@ -11,8 +11,9 @@ import {
 import {
   ANATOMICAL_AREAS,
   ANATOMICAL_REGIONS,
-  BODY_SEGMENTS,
+  BodyPartFilterId,
   BodySegmentId,
+  matchesBodyPartFilter,
 } from '../data/anatomicalAreas';
 import {
   formatChipLabel,
@@ -50,6 +51,7 @@ interface CentralEvaluationTableProps {
   hoveredAreaTarget?: { areaId: AnatomicalAreaId; side?: Side } | null;
   onHoverArea?: (target: { areaId: AnatomicalAreaId; side?: Side } | null) => void;
   activeRegionFilter?: AnatomicalRegionId | 'all';
+  bodyPartFilter?: BodyPartFilterId;
   /** Active 3-segment body region ('head_neck' | 'torso_pelvis' | 'limbs') for the unified single-screen view */
   activeBodySegment?: BodySegmentId;
   /** Active side ('left' | 'right') for the unified single-screen zone list */
@@ -227,7 +229,7 @@ export const CentralEvaluationTable: React.FC<CentralEvaluationTableProps> = ({
   hoveredAreaTarget = null,
   onHoverArea,
   activeRegionFilter = 'all',
-  activeBodySegment = 'head_neck',
+  bodyPartFilter = 'all',
   mobileSingleSide = null,
   tableContainerClassName = '',
 }) => {
@@ -267,34 +269,21 @@ export const CentralEvaluationTable: React.FC<CentralEvaluationTableProps> = ({
       (activeObs.techniques?.length ?? 0)
     : 0;
 
+  const filteredAreas = ANATOMICAL_AREAS.filter((area) =>
+    matchesBodyPartFilter(area.id, bodyPartFilter)
+  );
+
   return (
     <div className="relative w-full">
       <div className={tableContainerClassName}>
-      {/* MOBILE FULL 19-AREA LIST FOR THE ACTIVE SIDE (LEFT OR RIGHT) WITH NATURAL SCROLLING */}
+      {/* MOBILE FILTERED ZONE LIST FOR THE ACTIVE SIDE (LEFT OR RIGHT) — NO DARK HEADER BANNER */}
       {mobileSingleSide ? (
         <div
           data-testid={`mobile-area-list-${mobileSingleSide}`}
           className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-2xs"
         >
-          {/* Header Bar */}
-          <div className="bg-[#2B4C3F] text-[#FAF9F6] px-3.5 py-2 text-xs font-semibold flex items-center justify-between">
-            <span>
-              {mobileSingleSide === 'left'
-                ? lang === 'ru'
-                  ? 'Левая сторона — 19 зон (1–19)'
-                  : 'Left Side — 19 Anatomical Areas'
-                : lang === 'ru'
-                  ? 'Правая сторона — 19 зон (1–19)'
-                  : 'Right Side — 19 Anatomical Areas'}
-            </span>
-            <span className="text-[11px] text-[#FAF9F6]/80 font-normal">
-              {lang === 'ru' ? 'Нажмите на зону для оценки' : 'Tap any zone to evaluate'}
-            </span>
-          </div>
-
-          {/* All 19 Anatomical Areas */}
           <div className="divide-y divide-slate-200">
-            {ANATOMICAL_AREAS.map((area, idx) => {
+            {filteredAreas.map((area, idx) => {
               const row = tableState[area.id] ?? {
                 left: { reaction: null, restriction: false, released: false, note: '' },
                 right: { reaction: null, restriction: false, released: false, note: '' },
@@ -327,7 +316,7 @@ export const CentralEvaluationTable: React.FC<CentralEvaluationTableProps> = ({
                 >
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
                     <span
-                      className="inline-flex items-center justify-center w-6 h-6 rounded text-[11px] font-tabular font-bold text-slate-800 shrink-0 border"
+                      className="inline-flex items-center justify-center w-6 h-6 rounded text-[11px] font-tabular font-bold text-slate-900 shrink-0 border"
                       style={{
                         backgroundColor: region?.pastelFill ?? '#F3F1EC',
                         borderColor: region?.pastelStroke ?? '#CBD5E1',
@@ -351,7 +340,7 @@ export const CentralEvaluationTable: React.FC<CentralEvaluationTableProps> = ({
           </div>
         </div>
       ) : (
-        /* STANDARD 3-COLUMN TABLE (LEFT | AREA | RIGHT) */
+        /* STANDARD 3-COLUMN TABLE (LEFT | AREA | RIGHT) FILTERED BY BODY PART */
         <div className="overflow-hidden rounded-xl border border-slate-300 bg-[#FAF9F6] shadow-xs">
           <table className="w-full border-collapse text-left table-fixed">
             <thead>
@@ -366,7 +355,7 @@ export const CentralEvaluationTable: React.FC<CentralEvaluationTableProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-300/80 text-xs">
-              {ANATOMICAL_AREAS.map((area, idx) => {
+              {filteredAreas.map((area, idx) => {
                 const row = tableState[area.id] ?? {
                   left: { reaction: null, restriction: false, released: false, note: '' },
                   right: { reaction: null, restriction: false, released: false, note: '' },
@@ -425,7 +414,7 @@ export const CentralEvaluationTable: React.FC<CentralEvaluationTableProps> = ({
                     <td className="py-1.5 px-2 border-r border-slate-300/80 text-center align-middle">
                       <div className="flex items-center justify-between gap-1.5">
                         <span
-                          className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-tabular font-semibold text-slate-700 shrink-0 border"
+                          className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-tabular font-semibold text-slate-900 shrink-0 border"
                           style={{
                             backgroundColor: region?.pastelFill ?? '#F3F1EC',
                             borderColor: region?.pastelStroke ?? '#CBD5E1',

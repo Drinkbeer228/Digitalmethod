@@ -122,7 +122,7 @@ async function renderBrowserDiagramCompositePng(
     ctx.stroke();
   }
 
-  // 3. Soft pastel anatomical region polygons
+  // 3. Brighter, natural color-coded anatomical region polygons
   const mirrorX = view === 'right';
   for (const region of ANATOMICAL_REGIONS) {
     const polygons = view === 'top' ? region.topPolygons : region.leftPolygons;
@@ -138,11 +138,11 @@ async function renderBrowserDiagramCompositePng(
       });
       ctx.closePath();
       ctx.fillStyle = region.pastelFill;
-      ctx.globalAlpha = 0.5;
+      ctx.globalAlpha = 0.62;
       ctx.fill();
       ctx.strokeStyle = region.pastelStroke;
-      ctx.globalAlpha = 0.65;
-      ctx.lineWidth = 1.6;
+      ctx.globalAlpha = 0.85;
+      ctx.lineWidth = 2.0;
       ctx.stroke();
       ctx.restore();
     }
@@ -329,7 +329,7 @@ async function drawDiagramBoxOnPdf(
       height: boxH - 1,
     });
   } else {
-    // Node.js fallback: draw soft pastel region bounding boxes and embed raw PNG for left/top
+    // Node.js fallback: draw natural region bounding boxes and embed raw PNG for left/top
     for (const region of ANATOMICAL_REGIONS) {
       const polys = view === 'top' ? region.topPolygons : region.leftPolygons;
       const [r, g, b] = hexToRgbTuple(region.pastelFill);
@@ -347,7 +347,7 @@ async function drawDiagramBoxOnPdf(
           width: (maxX - minX) * boxW,
           height: (maxY - minY) * boxH,
           color: rgb(r, g, b),
-          opacity: 0.35,
+          opacity: 0.52,
         });
       }
     }
@@ -646,15 +646,15 @@ function hasAnyCellObservation(obs: AreaSideObservation | undefined): boolean {
 }
 
 /**
- * Generates a complete 2-page A4 PDF document (Uint8Array) 100% offline using pdf-lib,
+ * Generates a unified 2-page A4 PDF document (Uint8Array) 100% offline using pdf-lib,
  * embedded DejaVuSans TrueType fonts (Latin + Cyrillic), high-DPI composited diagrams,
  * and crisp vector markers.
  */
 export async function generateSessionPdfBytes(
   horse: HorseProfile,
   session: BodyworkSession,
-  mode: 'certification' | 'owner',
-  lang: Language
+  _mode: 'unified' | 'certification' | 'owner' = 'unified',
+  lang: Language = 'en'
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
   const { regular, bold } = await getEmbeddedFonts(pdfDoc);
@@ -681,13 +681,9 @@ export async function generateSessionPdfBytes(
   });
 
   const docTitle =
-    mode === 'certification'
-      ? lang === 'ru'
-        ? 'СХЕМА ОЦЕНКИ ЛОШАДИ — СЕРТИФИКАЦИОННЫЙ КЕЙС MASTERSON METHOD'
-        : 'MASTERSON METHOD CERTIFICATION CASE STUDY — EVALUATION MAP'
-      : lang === 'ru'
-        ? 'ОТЧЕТ О СЕССИИ БОДИВОРКА ДЛЯ ВЛАДЕЛЬЦА ЛОШАДИ (MASTERSON METHOD)'
-        : 'MASTERSON METHOD EQUINE BODYWORK — OWNER SESSION REPORT';
+    lang === 'ru'
+      ? 'ОТЧЕТ О СЕССИИ БОДИВОРКА ЛОШАДИ (MASTERSON METHOD)'
+      : 'MASTERSON METHOD EQUINE BODYWORK — SESSION REPORT';
 
   page1.drawText(docTitle, {
     x: margin + 12,
@@ -698,11 +694,9 @@ export async function generateSessionPdfBytes(
   });
 
   const subTitle =
-    mode === 'certification'
-      ? lang === 'ru'
-        ? 'Стр. 1: Визуальная карта пальпации (Реакции, Рестрикции, Релизы и Преобладающая диагональ)'
-        : 'Page 1: Visual Evaluation Map (Palpation Reactions, Restrictions, Releases & Predominant Diagonal)'
-      : t.ownerHeaderNote;
+    lang === 'ru'
+      ? 'Стр. 1: Визуальная карта пальпации (Реакции, Рестрикции, Релизы и Преобладающая диагональ)'
+      : 'Page 1: Visual Evaluation Map (Palpation Reactions, Restrictions, Releases & Predominant Diagonal)';
 
   page1.drawText(subTitle.slice(0, 105), {
     x: margin + 12,
@@ -725,9 +719,6 @@ export async function generateSessionPdfBytes(
   if (horse.job?.trim()) metaPairs.push({ label: t.jobLabel, value: horse.job.trim() });
   if (session.practitioner?.trim()) {
     metaPairs.push({ label: t.studentLabel, value: session.practitioner.trim() });
-  }
-  if (mode === 'certification' && session.caseStudyNumber?.trim()) {
-    metaPairs.push({ label: t.caseStudyNum, value: session.caseStudyNumber.trim() });
   }
   if (horse.owner?.trim()) metaPairs.push({ label: t.ownerLabel, value: horse.owner.trim() });
   if (session.duration?.trim()) {
@@ -988,7 +979,7 @@ export async function generateSessionPdfBytes(
   );
 
   // =========================================================================
-  // PAGE 2: CLINICAL SUMMARY & EVALUATION TABLE (OWNER OR CERTIFICATION MODE)
+  // PAGE 2: UNIFIED EVALUATED ZONES SUMMARY TABLE & SESSION NOTES
   // =========================================================================
   const page2 = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
   let p2Y = A4_HEIGHT - margin;
@@ -1003,8 +994,8 @@ export async function generateSessionPdfBytes(
   });
   page2.drawText(
     lang === 'ru'
-      ? `КЛИНИЧЕСКАЯ СВОДКА И ТАБЛИЦА ОЦЕНКИ — ${horse.name.toUpperCase()} (СЕССИЯ №${session.sessionNumber})`
-      : `CLINICAL SUMMARY & EVALUATION TABLE — ${horse.name.toUpperCase()} (SESSION #${session.sessionNumber})`,
+      ? `СВОДКА ОТМЕЧЕННЫХ ЗОН И ЗАМЕТКИ СЕССИИ — ${horse.name.toUpperCase()} (СЕССИЯ №${session.sessionNumber})`
+      : `EVALUATED ZONES SUMMARY & SESSION NOTES — ${horse.name.toUpperCase()} (SESSION #${session.sessionNumber})`,
     {
       x: margin + 10,
       y: p2Y - 18,
@@ -1015,16 +1006,11 @@ export async function generateSessionPdfBytes(
   );
   p2Y -= 36;
 
-  // Table Rows Selection:
-  // - Certification Mode: all 19 areas (Left | Area | Right)
-  // - Owner Report Mode: only marked/evaluated areas (or fallback notice if none marked)
-  const areasToRender =
-    mode === 'certification'
-      ? ANATOMICAL_AREAS
-      : ANATOMICAL_AREAS.filter((a) => {
-          const row = session.evaluationTable[a.id];
-          return hasAnyCellObservation(row?.left) || hasAnyCellObservation(row?.right);
-        });
+  // Unified Table: Evaluated / Marked anatomical zones
+  const areasToRender = ANATOMICAL_AREAS.filter((a) => {
+    const row = session.evaluationTable[a.id];
+    return hasAnyCellObservation(row?.left) || hasAnyCellObservation(row?.right);
+  });
 
   // Table Header
   const thH = 16;
@@ -1047,11 +1033,9 @@ export async function generateSessionPdfBytes(
     color: COLOR_WHITE,
   });
   page2.drawText(
-    mode === 'certification'
-      ? `${t.tableArea} (1–19)`
-      : lang === 'ru'
-        ? 'Отмеченные анатомические зоны'
-        : 'Evaluated Anatomical Areas',
+    lang === 'ru'
+      ? 'Отмеченные анатомические зоны'
+      : 'Evaluated Anatomical Areas',
     {
       x: margin + colLeftW + 8,
       y: p2Y - 11.5,
@@ -1069,7 +1053,7 @@ export async function generateSessionPdfBytes(
   });
   p2Y -= thH;
 
-  const rowH = mode === 'certification' ? 15.5 : 18;
+  const rowH = 18;
   if (areasToRender.length === 0) {
     page2.drawRectangle({
       x: margin,
@@ -1174,7 +1158,7 @@ export async function generateSessionPdfBytes(
     maxLines: number,
     highlightAmber = false
   ) => {
-    if (p2Y < margin + 56) return;
+    if (p2Y < margin + 36) return;
     const wrapped = wrapTextToLines(bodyText, regular, 7.6, contentW - 16).slice(
       0,
       maxLines
@@ -1215,11 +1199,8 @@ export async function generateSessionPdfBytes(
     4
   );
 
-  // 2. Predominant Diagonal (always in Certification mode, or if marked in Owner mode)
-  if (
-    mode === 'certification' ||
-    session.annotations.some((a) => a.kind === 'diagonal')
-  ) {
+  // 2. Predominant Diagonal (if marked)
+  if (session.annotations.some((a) => a.kind === 'diagonal')) {
     drawNarrativeSection(
       t.sec4Title,
       syncedSections.predominantDiagonal,
@@ -1233,41 +1214,16 @@ export async function generateSessionPdfBytes(
   drawNarrativeSection(
     t.sec5Title,
     unifiedSessionText,
-    mode === 'certification' ? 5 : 6
+    6
   );
 
-  // 4. Owner Care Notes (highlighted in Owner Report Mode)
+  // 4. Post-Session Care Recommendations
   drawNarrativeSection(
     t.sec6Title,
     syncedSections.postSessionCareNotes,
-    mode === 'owner' ? 6 : 4,
-    mode === 'owner'
+    6,
+    true
   );
-
-  // Mandatory Educational Disclaimer Footer (Certification Mode only)
-  if (mode === 'certification') {
-    const discLines = wrapTextToLines(t.certDisclaimer, bold, 6.5, contentW - 12);
-    const discH = discLines.length * 8.5 + 8;
-    const discBottomY = margin + 4;
-    page2.drawRectangle({
-      x: margin,
-      y: discBottomY,
-      width: contentW,
-      height: discH,
-      color: COLOR_ROW_ALT,
-      borderColor: COLOR_FOREST,
-      borderWidth: 0.7,
-    });
-    discLines.forEach((line, i) => {
-      page2.drawText(line, {
-        x: margin + 6,
-        y: discBottomY + discH - 9 - i * 8.5,
-        size: 6.5,
-        font: bold,
-        color: COLOR_CHARCOAL,
-      });
-    });
-  }
 
   // Page 2 Footer
   page2.drawText(
@@ -1298,8 +1254,8 @@ export function buildPdfFileName(horse: HorseProfile, session: BodyworkSession):
 export async function buildSessionPdfFile(
   horse: HorseProfile,
   session: BodyworkSession,
-  mode: 'certification' | 'owner',
-  lang: Language
+  mode: 'unified' | 'certification' | 'owner' = 'unified',
+  lang: Language = 'en'
 ): Promise<File> {
   const bytes = await generateSessionPdfBytes(horse, session, mode, lang);
   const filename = buildPdfFileName(horse, session);

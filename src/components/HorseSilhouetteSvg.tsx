@@ -14,14 +14,16 @@ import {
 import {
   ANATOMICAL_AREAS,
   ANATOMICAL_REGIONS,
+  BODY_PART_FILTERS,
   BODY_SEGMENTS,
+  BodyPartFilterId,
   BodySegmentId,
   getAreaCoordinate,
   getAreaReactionEndpoints,
   getBodySegmentForArea,
+  matchesBodyPartFilter,
   TOP_VIEW_ANCHORS,
 } from '../data/anatomicalAreas';
-import { ZoomIn, ZoomOut } from 'lucide-react';
 
 export type DrawingTool =
   | 'select'
@@ -31,8 +33,6 @@ export type DrawingTool =
   | 'restriction'
   | 'diagonal'
   | 'eraser';
-
-type ZoomPresetId = 'full' | 'head_poll' | 'forelimb' | 'hindlimb';
 
 interface HorseSilhouetteSvgProps {
   view: 'left' | 'right' | 'top';
@@ -44,6 +44,8 @@ interface HorseSilhouetteSvgProps {
   selectedAreaTarget?: { areaId: AnatomicalAreaId; side: Side } | null;
   hoveredAreaTarget?: { areaId: AnatomicalAreaId; side?: Side } | null;
   activeRegionFilter?: AnatomicalRegionId | 'all';
+  bodyPartFilter?: BodyPartFilterId;
+  onChangeBodyPartFilter?: (filter: BodyPartFilterId) => void;
   activeBodySegment?: BodySegmentId;
   onSelectBodySegment?: (segment: BodySegmentId) => void;
   showPastelZones?: boolean;
@@ -155,29 +157,32 @@ function pointsToSvgPolygon(
     .join(' ');
 }
 
-function getZoomViewBox(
-  view: 'left' | 'right' | 'top',
-  preset: ZoomPresetId,
-  width: number,
-  height: number
-): string {
-  if (view === 'top' || preset === 'full') {
-    return `0 0 ${width} ${height}`;
+function doesRegionPolygonMatchBodyPart(
+  regionId: AnatomicalRegionId,
+  polygonIndex: number,
+  filterId: BodyPartFilterId
+): boolean {
+  if (filterId === 'all') return true;
+  if (filterId === 'head') {
+    return regionId === 'head_poll' || regionId === 'neck_shoulder';
   }
-  const isRight = view === 'right';
-  if (preset === 'head_poll') {
-    const vx = isRight ? 540 : 20;
-    return `${vx} 10 440 380`;
+  if (filterId === 'torso') {
+    return (
+      regionId === 'neck_shoulder' ||
+      regionId === 'back_torso' ||
+      regionId === 'pelvis_hindquarters'
+    );
   }
-  if (preset === 'forelimb') {
-    const vx = isRight ? 460 : 240;
-    return `${vx} 460 300 390`;
+  if (filterId === 'front') {
+    return regionId === 'limbs_joints' && polygonIndex === 0;
   }
-  if (preset === 'hindlimb') {
-    const vx = isRight ? 40 : 660;
-    return `${vx} 460 300 390`;
+  if (filterId === 'hind') {
+    return (
+      regionId === 'pelvis_hindquarters' ||
+      (regionId === 'limbs_joints' && polygonIndex === 1)
+    );
   }
-  return `0 0 ${width} ${height}`;
+  return true;
 }
 
 export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
@@ -187,11 +192,12 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
   selectedAreaTarget = null,
   hoveredAreaTarget = null,
   activeRegionFilter = 'all',
+  bodyPartFilter = 'all',
+  onChangeBodyPartFilter,
   activeBodySegment,
   onSelectBodySegment,
   showPastelZones = true,
   showLandmarkNumbers = true,
-  hideZoomBar = false,
   svgClassName,
   onChangeAnnotations,
   onAreaLandmarkClick,
@@ -204,8 +210,6 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
   const width = view === 'top' ? TOP_W : SIDE_W;
   const height = view === 'top' ? TOP_H : SIDE_H;
   const isMirrored = view === 'right';
-
-  const [zoomPreset, setZoomPreset] = useState<ZoomPresetId>('full');
 
   // Top View two-step anchor selection state (Atlas -> Gluteal/Sacrum)
   const [pendingAtlasAnchor, setPendingAtlasAnchor] = useState<
@@ -266,52 +270,41 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
     setPendingAtlasAnchor(null);
   };
 
-  const viewBoxStr = getZoomViewBox(view, zoomPreset, width, height);
+  const viewBoxStr = `0 0 ${width} ${height}`;
 
   return (
     <div className="relative w-full h-full flex flex-col select-none">
-      {/* Optional Region Zoom Presets on interactive Left/Right views */}
-      {!readOnly && !hideZoomBar && view !== 'top' && (
+      {/* Floating Body-Part Filter in Top-Right Corner of Left/Right Diagram */}
+      {!readOnly && view !== 'top' && onChangeBodyPartFilter && (
         <div
-          data-testid={`svg-zoom-bar-${view}`}
-          className="flex flex-wrap items-center justify-between gap-1.5 mb-2 text-[11px]"
+          data-testid={`body-part-filter-bar-${view}`}
+          className="absolute top-2 right-2 z-10 bg-white/90 backdrop-blur-sm rounded-lg border border-slate-300/90 p-0.5 shadow-xs flex items-center gap-0.5"
+          role="group"
+          aria-label={lang === 'ru' ? 'Фильтр частей тела' : 'Body Part Filter'}
         >
-          <span className="inline-flex items-center gap-1 text-slate-500 font-medium">
-            {zoomPreset === 'full' ? (
-              <ZoomIn className="w-3.5 h-3.5 text-[#2B4C3F]" />
-            ) : (
-              <ZoomOut className="w-3.5 h-3.5 text-[#2B4C3F]" />
-            )}
-            <span>{lang === 'ru' ? 'Масштаб:' : 'Zoom:'}</span>
-          </span>
-          <div className="inline-flex rounded-lg bg-[#F3F1EC] p-0.5 border border-slate-300">
-            {(
-              [
-                { id: 'full', label: lang === 'ru' ? 'Весь' : 'Full' },
-                { id: 'head_poll', label: lang === 'ru' ? 'Затылок' : 'Head/Poll' },
-                { id: 'forelimb', label: lang === 'ru' ? 'Перед. нога' : 'Forelimb' },
-                { id: 'hindlimb', label: lang === 'ru' ? 'Зад. нога' : 'Hindlimb' },
-              ] as const
-            ).map((preset) => (
+          {BODY_PART_FILTERS.map((f) => {
+            const isActive = bodyPartFilter === f.id;
+            return (
               <button
-                key={preset.id}
+                key={f.id}
                 type="button"
-                data-testid={`svg-zoom-${view}-${preset.id}`}
-                onClick={() =>
-                  setZoomPreset((prev) =>
-                    prev === preset.id && preset.id !== 'full' ? 'full' : preset.id
-                  )
-                }
-                className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
-                  zoomPreset === preset.id
-                    ? 'bg-[#2B4C3F] text-white'
-                    : 'text-slate-600 hover:text-slate-900'
+                data-testid={`body-part-filter-${view}-${f.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onChangeBodyPartFilter(
+                    bodyPartFilter === f.id && f.id !== 'all' ? 'all' : f.id
+                  );
+                }}
+                className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                  isActive
+                    ? 'bg-[#2B4C3F] text-white shadow-2xs'
+                    : 'text-slate-700 hover:text-slate-950 hover:bg-slate-100/80'
                 }`}
               >
-                {preset.label}
+                {lang === 'ru' ? f.labelRu : f.labelEn}
               </button>
-            ))}
-          </div>
+            );
+          })}
         </div>
       )}
 
@@ -383,10 +376,10 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
                       key={`${seg.id}-${pIdx}`}
                       points={pointsToSvgPolygon(poly, width, height, isMirrored)}
                       fill={isSegActive ? seg.activeFill : seg.pastelFill}
-                      fillOpacity={isSegActive ? 0.65 : 0.25}
+                      fillOpacity={isSegActive ? 0.72 : 0.35}
                       stroke={isSegActive ? '#2B4C3F' : seg.pastelStroke}
-                      strokeWidth={isSegActive ? 2.8 : 1.2}
-                      strokeOpacity={isSegActive ? 0.9 : 0.45}
+                      strokeWidth={isSegActive ? 2.8 : 1.4}
+                      strokeOpacity={isSegActive ? 0.9 : 0.6}
                       strokeDasharray={isSegActive ? undefined : '5 3'}
                       strokeLinejoin="round"
                     />
@@ -396,7 +389,7 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
             })}
           </g>
         ) : (
-          /* LAYER 2B: Five Softly Color-Coded Pastel Anatomical Regions (Top view & PDF report) */
+          /* LAYER 2B: Five Brighter, Natural Color-Coded Anatomical Regions */
           showPastelZones && (
             <g data-testid={`layer-pastel-regions-${view}`}>
               {ANATOMICAL_REGIONS.map((region) => {
@@ -404,33 +397,40 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
                   view === 'top' ? region.topPolygons : region.leftPolygons;
                 if (polygons.length === 0) return null;
 
-                const isFilterFocused =
-                  activeRegionFilter === region.id ||
-                  activeHighlightRegionId === region.id;
-                const isDimmed =
-                  activeRegionFilter !== 'all' && activeRegionFilter !== region.id;
-
-                const fill = isFilterFocused ? region.activeFill : region.pastelFill;
-                const stroke = isFilterFocused
-                  ? region.activeStroke
-                  : region.pastelStroke;
-                const fillOpacity = isDimmed ? 0.16 : isFilterFocused ? 0.68 : 0.44;
-                const strokeOpacity = isDimmed ? 0.25 : isFilterFocused ? 0.85 : 0.5;
-
                 return (
                   <g key={region.id} data-region-id={region.id}>
-                    {polygons.map((poly, pIdx) => (
-                      <polygon
-                        key={`${region.id}-${pIdx}`}
-                        points={pointsToSvgPolygon(poly, width, height, isMirrored)}
-                        fill={fill}
-                        fillOpacity={fillOpacity}
-                        stroke={stroke}
-                        strokeWidth={isFilterFocused ? 2 : 1.2}
-                        strokeOpacity={strokeOpacity}
-                        strokeLinejoin="round"
-                      />
-                    ))}
+                    {polygons.map((poly, pIdx) => {
+                      const matchesBodyPart =
+                        view === 'top' ||
+                        doesRegionPolygonMatchBodyPart(region.id, pIdx, bodyPartFilter);
+                      const isFilterFocused =
+                        (bodyPartFilter !== 'all' && matchesBodyPart) ||
+                        activeRegionFilter === region.id ||
+                        activeHighlightRegionId === region.id;
+                      const isDimmed =
+                        (bodyPartFilter !== 'all' && !matchesBodyPart) ||
+                        (activeRegionFilter !== 'all' && activeRegionFilter !== region.id);
+
+                      const fill = isFilterFocused ? region.activeFill : region.pastelFill;
+                      const stroke = isFilterFocused
+                        ? region.activeStroke
+                        : region.pastelStroke;
+                      const fillOpacity = isDimmed ? 0.18 : isFilterFocused ? 0.75 : 0.58;
+                      const strokeOpacity = isDimmed ? 0.25 : isFilterFocused ? 0.92 : 0.75;
+
+                      return (
+                        <polygon
+                          key={`${region.id}-${pIdx}`}
+                          points={pointsToSvgPolygon(poly, width, height, isMirrored)}
+                          fill={fill}
+                          fillOpacity={fillOpacity}
+                          stroke={stroke}
+                          strokeWidth={isFilterFocused ? 2.2 : 1.5}
+                          strokeOpacity={strokeOpacity}
+                          strokeLinejoin="round"
+                        />
+                      );
+                    })}
                   </g>
                 );
               })}
@@ -744,13 +744,13 @@ export const HorseSilhouetteSvg: React.FC<HorseSilhouetteSvgProps> = ({
                   {(showLandmarkDots || hasObservation || isSelected || isHovered) && (
                     <g
                       opacity={
-                        !activeBodySegment ||
-                        getBodySegmentForArea(area.id) === activeBodySegment ||
-                        hasObservation ||
-                        isSelected ||
-                        isHovered
+                        matchesBodyPartFilter(area.id, bodyPartFilter) &&
+                        (!activeBodySegment ||
+                          getBodySegmentForArea(area.id) === activeBodySegment)
                           ? 1
-                          : 0.55
+                          : isSelected || isHovered
+                            ? 1
+                            : 0.28
                       }
                     >
                       <circle

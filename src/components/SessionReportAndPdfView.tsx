@@ -34,7 +34,6 @@ import {
   Printer,
   RefreshCw,
   Share2,
-  ShieldAlert,
 } from 'lucide-react';
 
 interface SessionReportAndPdfViewProps {
@@ -93,20 +92,19 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
   onEditOnMap,
 }) => {
   const t = TRANSLATIONS[lang];
-  const [reportMode, setReportMode] = useState<'certification' | 'owner'>('owner');
   const [preBuiltPdfFile, setPreBuiltPdfFile] = useState<File | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [exportStatusMsg, setExportStatusMsg] = useState<string | null>(null);
   const [showNarrativeSections, setShowNarrativeSections] = useState(false);
 
-  // Pre-build the A4 PDF File in the background whenever horse/session/mode/lang changes
+  // Pre-build the unified A4 PDF File in the background whenever horse/session/lang changes
   // so Web Share API on iOS Safari can be invoked synchronously inside the tap gesture.
   useEffect(() => {
     let cancelled = false;
     setPreBuiltPdfFile(null);
     void (async () => {
       try {
-        const file = await buildSessionPdfFile(horse, session, reportMode, lang);
+        const file = await buildSessionPdfFile(horse, session, 'unified', lang);
         if (!cancelled) {
           setPreBuiltPdfFile(file);
         }
@@ -117,7 +115,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
     return () => {
       cancelled = true;
     };
-  }, [horse, session, reportMode, lang]);
+  }, [horse, session, lang]);
 
   const handleSyncFromEvaluation = () => {
     const generated = buildReportFromSession(session, lang);
@@ -139,7 +137,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
       setIsGeneratingPdf(true);
       const pdfFile =
         preBuiltPdfFile ??
-        (await buildSessionPdfFile(horse, session, reportMode, lang));
+        (await buildSessionPdfFile(horse, session, 'unified', lang));
       const outcome = await shareOrDownloadPdfFile(
         pdfFile,
         `Masterson Method Report — ${horse.name}`
@@ -168,7 +166,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
       setIsGeneratingPdf(true);
       const pdfFile =
         preBuiltPdfFile ??
-        (await buildSessionPdfFile(horse, session, reportMode, lang));
+        (await buildSessionPdfFile(horse, session, 'unified', lang));
       triggerPdfFileDownload(pdfFile);
       setExportStatusMsg(
         lang === 'ru' ? `Скачан файл ${pdfFile.name}` : `Downloaded ${pdfFile.name}`
@@ -226,9 +224,6 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
   if (session.practitioner?.trim()) {
     cleanMetaItems.push({ label: t.studentLabel, value: session.practitioner });
   }
-  if (reportMode === 'certification' && session.caseStudyNumber?.trim()) {
-    cleanMetaItems.push({ label: t.caseStudyNum, value: session.caseStudyNumber });
-  }
   if (horse.owner?.trim()) cleanMetaItems.push({ label: t.ownerLabel, value: horse.owner });
   if (horse.contactInfo?.trim()) {
     cleanMetaItems.push({ label: t.contactLabel, value: horse.contactInfo });
@@ -242,7 +237,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
       data-testid="session-summary-and-export-view"
       className="space-y-6"
     >
-      {/* Top Action & Mode Bar */}
+      {/* Top Action Bar */}
       <div className="no-print flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl border border-slate-300 bg-white shadow-xs">
         <div className="flex flex-wrap items-center gap-3">
           <div>
@@ -257,34 +252,6 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
                 ? `Отмечено зон: ${markedZoneEntries.length}`
                 : `${markedZoneEntries.length} marked zone side(s)`}
             </div>
-          </div>
-
-          {/* Owner Report / Certification Mode Toggle */}
-          <div className="inline-flex rounded-xl bg-[#F3F1EC] p-1 border border-slate-300">
-            <button
-              type="button"
-              data-testid="report-mode-owner"
-              onClick={() => setReportMode('owner')}
-              className={`min-h-[36px] px-3 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-                reportMode === 'owner'
-                  ? 'bg-[#2B4C3F] text-white shadow-xs'
-                  : 'text-slate-700 hover:text-slate-900'
-              }`}
-            >
-              {t.reportModeOwner}
-            </button>
-            <button
-              type="button"
-              data-testid="report-mode-certification"
-              onClick={() => setReportMode('certification')}
-              className={`min-h-[36px] px-3 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-                reportMode === 'certification'
-                  ? 'bg-[#2B4C3F] text-white shadow-xs'
-                  : 'text-slate-700 hover:text-slate-900'
-              }`}
-            >
-              {t.reportModeCert}
-            </button>
           </div>
         </div>
 
@@ -682,17 +649,6 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
             </div>
           )}
         </div>
-
-        {/* Educational Disclaimer in Certification Mode */}
-        {reportMode === 'certification' && (
-          <div
-            data-testid="certification-disclaimer-banner"
-            className="pt-3 border-t border-slate-200 flex items-start gap-2.5 text-[11px] text-slate-600 leading-snug"
-          >
-            <ShieldAlert className="w-4 h-4 text-[#2B4C3F] shrink-0 mt-0.5" />
-            <p>{t.certDisclaimer}</p>
-          </div>
-        )}
       </section>
     </div>
   );

@@ -12,7 +12,6 @@ import {
   VoiceRecordingClip,
 } from '../types';
 import { TRANSLATIONS } from '../data/translations';
-import { parsePractitionerNotes } from '../utils/caseParser';
 import { transcribeAudioClipLocally } from '../whisper/localWhisperEngine';
 import { db, StoredAudioChunkRow } from '../db/database';
 import {
@@ -23,7 +22,6 @@ import {
   Mic,
   Pause,
   Play,
-  Sparkles,
   Square,
   Trash2,
   X,
@@ -36,7 +34,7 @@ interface EvaluationAudioNotesPanelProps {
   onSaveClip: (clip: VoiceRecordingClip) => Promise<void>;
   onDeleteClip: (clipId: string) => Promise<void>;
   onAppendTranscriptToSessionNotes: (text: string) => void;
-  onApplySuggestion: (suggestion: ProposedCaseSuggestion) => void;
+  onApplySuggestion?: (suggestion: ProposedCaseSuggestion) => void;
   installedModels: InstalledWhisperModel[];
   onNavigateToHorses?: () => void;
   isOpen?: boolean;
@@ -95,7 +93,6 @@ export const EvaluationAudioNotesPanel: React.FC<EvaluationAudioNotesPanelProps>
   onSaveClip,
   onDeleteClip,
   onAppendTranscriptToSessionNotes,
-  onApplySuggestion,
   installedModels,
   onNavigateToHorses,
   isOpen: controlledOpen,
@@ -140,13 +137,10 @@ export const EvaluationAudioNotesPanel: React.FC<EvaluationAudioNotesPanelProps>
   const clientTokenRef = useRef<string>(`client-${Math.random()}-${Date.now()}`);
   const inMemoryChunksMapRef = useRef<Map<number, Blob>>(new Map());
 
-  // Transcription & Optional Per-Clip Suggestion State
+  // Transcription State
   const [transcribingClipId, setTranscribingClipId] = useState<string | null>(null);
   const [transcribeStage, setTranscribeStage] = useState<string>('');
   const [preferredSpeechLang, setPreferredSpeechLang] = useState<'auto' | 'en' | 'ru'>('auto');
-  const [clipSuggestionsMap, setClipSuggestionsMap] = useState<
-    Record<string, ProposedCaseSuggestion[]>
-  >({});
   const [appendedClipId, setAppendedClipId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -712,33 +706,6 @@ export const EvaluationAudioNotesPanel: React.FC<EvaluationAudioNotesPanelProps>
     }
   };
 
-  const handleRunClipNoteParser = (clip: VoiceRecordingClip) => {
-    const parsed = parsePractitionerNotes(clip.transcript, clip.id);
-    setClipSuggestionsMap((prev) => ({
-      ...prev,
-      [clip.id]: parsed,
-    }));
-  };
-
-  const handleAcceptClipSuggestion = (clipId: string, sug: ProposedCaseSuggestion) => {
-    onApplySuggestion(sug);
-    setClipSuggestionsMap((prev) => ({
-      ...prev,
-      [clipId]: (prev[clipId] ?? []).map((s) =>
-        s.id === sug.id ? { ...s, status: 'accepted' } : s
-      ),
-    }));
-  };
-
-  const handleDismissClipSuggestion = (clipId: string, sugId: string) => {
-    setClipSuggestionsMap((prev) => ({
-      ...prev,
-      [clipId]: (prev[clipId] ?? []).map((s) =>
-        s.id === sugId ? { ...s, status: 'rejected' } : s
-      ),
-    }));
-  };
-
   const formattedTimer = `${String(Math.floor(recSeconds / 60)).padStart(2, '0')}:${String(
     recSeconds % 60
   ).padStart(2, '0')}`;
@@ -839,7 +806,7 @@ export const EvaluationAudioNotesPanel: React.FC<EvaluationAudioNotesPanelProps>
         className="hidden"
       />
 
-      {/* SLIDE-UP AUDIO CLIPS & LOCAL WHISPER DRAWER */}
+      {/* SLIDE-UP AUDIO CLIPS DRAWER */}
       {isAudioDrawerOpen && (
         <div
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/45 p-0 sm:p-4 no-print"
@@ -856,16 +823,14 @@ export const EvaluationAudioNotesPanel: React.FC<EvaluationAudioNotesPanelProps>
             <div className="w-11 h-1.5 rounded-full bg-slate-300 mx-auto sm:hidden" />
 
             <div className="flex items-center justify-between border-b border-slate-200 pb-3 gap-2">
-              <div>
-                <h3 className="text-base font-bold text-[#1E2421]">
-                  {lang === 'ru'
-                    ? `Аудиозаписи сессии (${clips.length})`
-                    : `Session Audio Clips (${clips.length})`}
-                </h3>
-                <p className="text-xs text-slate-500">{t.voiceSubtitle}</p>
-              </div>
+              <h3 className="text-base font-bold text-[#1E2421]">
+                {lang === 'ru'
+                  ? `Аудиозаписи сессии (${clips.length})`
+                  : `Session Audio Clips (${clips.length})`}
+              </h3>
               <button
                 type="button"
+                data-testid="close-audio-drawer-btn"
                 onClick={() => setIsAudioDrawerOpen(false)}
                 className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-slate-200/70 hover:bg-slate-200 text-slate-700 cursor-pointer shrink-0"
                 aria-label="Close audio clips drawer"
@@ -957,204 +922,132 @@ export const EvaluationAudioNotesPanel: React.FC<EvaluationAudioNotesPanelProps>
               </div>
             ) : (
               <div className="space-y-3">
-                {clips.map((clip, index) => {
-                  const clipSugs = clipSuggestionsMap[clip.id] ?? [];
-                  return (
-                    <div
-                      key={clip.id}
-                      data-testid={`clip-card-${index + 1}`}
-                      className="p-3.5 rounded-xl border border-slate-200 bg-white space-y-2.5 shadow-2xs"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="text-xs font-semibold text-[#1E2421]">
-                          <span>
-                            Clip #{index + 1} · {clip.durationSec}s
-                          </span>
-                          <span className="mx-1.5 text-slate-400">·</span>
-                          <span className="text-slate-500 font-tabular">
-                            {new Date(clip.createdAt).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                          {clip.modelUsed && (
-                            <>
-                              <span className="mx-1.5 text-slate-400">·</span>
-                              <span className="text-slate-500">{clip.modelUsed}</span>
-                            </>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            disabled={transcribingClipId === clip.id}
-                            onClick={() => void handleTranscribeClip(clip)}
-                            className="min-h-[38px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2B4C3F] hover:bg-[#223D32] disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
-                          >
-                            <Cpu className="w-3.5 h-3.5" />
-                            <span>
-                              {transcribingClipId === clip.id
-                                ? lang === 'ru'
-                                  ? 'Обработка...'
-                                  : 'Transcribing...'
-                                : t.transcribeClip}
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void onDeleteClip(clip.id)}
-                            className="min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-400 hover:text-red-700 rounded-lg hover:bg-red-50 cursor-pointer"
-                            aria-label={`Delete clip ${index + 1}`}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                {clips.map((clip, index) => (
+                  <div
+                    key={clip.id}
+                    data-testid={`clip-card-${index + 1}`}
+                    className="p-3.5 rounded-xl border border-slate-200 bg-white space-y-2.5 shadow-2xs"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs font-semibold text-[#1E2421]">
+                        <span>
+                          Clip #{index + 1} · {clip.durationSec}s
+                        </span>
+                        <span className="mx-1.5 text-slate-400">·</span>
+                        <span className="text-slate-500 font-tabular">
+                          {new Date(clip.createdAt).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
                       </div>
 
-                      <AudioClipPlayer clip={clip} />
-
-                      {transcribingClipId === clip.id && (
-                        <div className="text-xs text-[#2B4C3F] font-medium">
-                          {transcribeStage}
-                        </div>
-                      )}
-
-                      {clip.transcriptionError && (
-                        <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-800 space-y-1.5">
-                          <div>{clip.transcriptionError}</div>
-                          {onNavigateToHorses && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsAudioDrawerOpen(false);
-                                onNavigateToHorses();
-                              }}
-                              className="px-2.5 py-1 rounded-md bg-[#2B4C3F] text-white text-[11px] font-semibold cursor-pointer inline-block"
-                            >
-                              {lang === 'ru'
-                                ? 'Лошади и сессии → Настройка офлайн-распознавания'
-                                : 'Horses & Sessions → Configure Whisper'}
-                            </button>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="space-y-2">
-                        <label className="block text-[11px] font-semibold text-slate-600">
-                          {lang === 'ru'
-                            ? 'Транскрипт (редактируемый):'
-                            : 'Transcript (Editable):'}
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={clip.transcript}
-                          onChange={(e) =>
-                            void onSaveClip({ ...clip, transcript: e.target.value })
-                          }
-                          placeholder={
-                            lang === 'ru'
-                              ? 'Введите текст или нажмите «Распознать локально»...'
-                              : 'Type or tap Transcribe Locally...'
-                          }
-                          className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] p-2.5 text-xs text-slate-900 leading-relaxed focus:border-[#2B4C3F] focus:outline-none"
-                        />
-
-                        {clip.transcript.trim().length > 0 && (
-                          <div className="flex flex-wrap items-center justify-end gap-2">
-                            <button
-                              type="button"
-                              data-testid={`append-transcript-btn-${index + 1}`}
-                              onClick={() => {
-                                onAppendTranscriptToSessionNotes(clip.transcript.trim());
-                                setAppendedClipId(clip.id);
-                                setTimeout(() => setAppendedClipId(null), 2000);
-                              }}
-                              className="min-h-[38px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2B4C3F]/10 hover:bg-[#2B4C3F]/20 text-[#2B4C3F] text-xs font-semibold cursor-pointer"
-                            >
-                              {appendedClipId === clip.id ? (
-                                <>
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>
-                                    {lang === 'ru' ? 'Добавлено!' : 'Appended!'}
-                                  </span>
-                                </>
-                              ) : (
-                                <>
-                                  <FilePlus2 className="w-3.5 h-3.5" />
-                                  <span>{t.appendTranscriptBtn}</span>
-                                </>
-                              )}
-                            </button>
-
-                            <button
-                              type="button"
-                              data-testid={`parse-transcript-btn-${index + 1}`}
-                              onClick={() => handleRunClipNoteParser(clip)}
-                              className="min-h-[38px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium cursor-pointer"
-                            >
-                              <Sparkles className="w-3.5 h-3.5 text-[#2B4C3F]" />
-                              <span>{t.parseTranscript}</span>
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Optional Secondary Per-Clip Suggestions */}
-                        {clipSugs.length > 0 && (
-                          <div className="mt-2 pt-2 border-t border-slate-200 space-y-1.5">
-                            <div className="text-[11px] font-semibold text-[#2B4C3F]">
-                              {t.suggestionsTitle}
-                            </div>
-                            {clipSugs.map((sug) => (
-                              <div
-                                key={sug.id}
-                                className={`p-2 rounded-lg border text-xs flex flex-wrap items-center justify-between gap-2 ${
-                                  sug.status === 'accepted'
-                                    ? 'bg-emerald-50 border-emerald-200 opacity-75'
-                                    : sug.status === 'rejected'
-                                      ? 'bg-slate-100 border-slate-200 opacity-50 line-through'
-                                      : 'bg-[#FAF9F6] border-slate-200'
-                                }`}
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <div className="font-semibold text-[#1E2421]">
-                                    {sug.type.replace('_', ' ')}{' '}
-                                    {sug.areaId ? `(${sug.areaId})` : ''}
-                                  </div>
-                                  <div className="text-slate-600 italic truncate">
-                                    “{sug.sourceSentence}”
-                                  </div>
-                                </div>
-                                {sug.status === 'pending' && (
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleAcceptClipSuggestion(clip.id, sug)
-                                      }
-                                      className="px-2.5 py-1 rounded-md bg-[#2B4C3F] text-white text-[11px] font-semibold cursor-pointer"
-                                    >
-                                      {t.acceptSuggestion}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleDismissClipSuggestion(clip.id, sug.id)
-                                      }
-                                      className="px-2 py-1 rounded-md border border-slate-300 bg-white text-slate-600 text-[11px] cursor-pointer"
-                                    >
-                                      {t.rejectSuggestion}
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          disabled={transcribingClipId === clip.id}
+                          onClick={() => void handleTranscribeClip(clip)}
+                          className="min-h-[38px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2B4C3F] hover:bg-[#223D32] disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
+                        >
+                          <Cpu className="w-3.5 h-3.5" />
+                          <span>
+                            {transcribingClipId === clip.id
+                              ? lang === 'ru'
+                                ? 'Обработка...'
+                                : 'Transcribing...'
+                              : t.transcribeClip}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void onDeleteClip(clip.id)}
+                          className="min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-400 hover:text-red-700 rounded-lg hover:bg-red-50 cursor-pointer"
+                          aria-label={`Delete clip ${index + 1}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
-                  );
-                })}
+
+                    <AudioClipPlayer clip={clip} />
+
+                    {transcribingClipId === clip.id && (
+                      <div className="text-xs text-[#2B4C3F] font-medium">
+                        {transcribeStage}
+                      </div>
+                    )}
+
+                    {clip.transcriptionError && (
+                      <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-800 space-y-1.5">
+                        <div>{clip.transcriptionError}</div>
+                        {onNavigateToHorses && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAudioDrawerOpen(false);
+                              onNavigateToHorses();
+                            }}
+                            className="px-2.5 py-1 rounded-md bg-[#2B4C3F] text-white text-[11px] font-semibold cursor-pointer inline-block"
+                          >
+                            {lang === 'ru'
+                              ? 'Лошади и сессии → Настройка офлайн-распознавания'
+                              : 'Horses & Sessions → Configure Whisper'}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <label className="block text-[11px] font-semibold text-slate-600">
+                        {lang === 'ru'
+                          ? 'Транскрипт (редактируемый):'
+                          : 'Transcript (Editable):'}
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={clip.transcript}
+                        onChange={(e) =>
+                          void onSaveClip({ ...clip, transcript: e.target.value })
+                        }
+                        placeholder={
+                          lang === 'ru'
+                            ? 'Введите текст или нажмите «Распознать локально»...'
+                            : 'Type or tap Transcribe Locally...'
+                        }
+                        className="w-full rounded-lg border border-slate-300 bg-[#FAF9F6] p-2.5 text-xs text-slate-900 leading-relaxed focus:border-[#2B4C3F] focus:outline-none"
+                      />
+
+                      {clip.transcript.trim().length > 0 && (
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            data-testid={`append-transcript-btn-${index + 1}`}
+                            onClick={() => {
+                              onAppendTranscriptToSessionNotes(clip.transcript.trim());
+                              setAppendedClipId(clip.id);
+                              setTimeout(() => setAppendedClipId(null), 2000);
+                            }}
+                            className="min-h-[38px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2B4C3F]/10 hover:bg-[#2B4C3F]/20 text-[#2B4C3F] text-xs font-semibold cursor-pointer"
+                          >
+                            {appendedClipId === clip.id ? (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>
+                                  {lang === 'ru' ? 'Добавлено!' : 'Appended!'}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <FilePlus2 className="w-3.5 h-3.5" />
+                                <span>{t.appendTranscriptBtn}</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

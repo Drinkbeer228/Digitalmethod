@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import { PDFDocument } from 'pdf-lib';
 import {
   ANATOMICAL_AREAS,
+  BODY_PART_FILTERS,
   BODY_SEGMENTS,
   createEmptyEvaluationTable,
   getBodySegmentForArea,
+  matchesBodyPartFilter,
   syncAnnotationsWithTable,
 } from '../data/anatomicalAreas';
 import {
@@ -98,6 +100,30 @@ function makeTestFixtures(): { horse: HorseProfile; session: BodyworkSession } {
 }
 
 describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF Export', () => {
+  it('partitions all 19 anatomical areas into 5 body-part filters (All: 19, Head: 4, Torso: 8, Front: 4, Hind: 3)', () => {
+    assert.equal(BODY_PART_FILTERS.length, 5);
+    assert.deepEqual(
+      BODY_PART_FILTERS.map((f) => ({ id: f.id, count: f.areaIds.length })),
+      [
+        { id: 'all', count: 19 },
+        { id: 'head', count: 4 },
+        { id: 'torso', count: 8 },
+        { id: 'front', count: 4 },
+        { id: 'hind', count: 3 },
+      ]
+    );
+    assert.equal(matchesBodyPartFilter('poll_front_atlas', 'head'), true);
+    assert.equal(matchesBodyPartFilter('neck', 'head'), true);
+    assert.equal(matchesBodyPartFilter('shoulder', 'head'), false);
+    assert.equal(matchesBodyPartFilter('shoulder', 'torso'), true);
+    assert.equal(matchesBodyPartFilter('sacrum', 'torso'), true);
+    assert.equal(matchesBodyPartFilter('hoof_point', 'front'), true);
+    assert.equal(matchesBodyPartFilter('front_fetlock', 'front'), true);
+    assert.equal(matchesBodyPartFilter('hamstrings', 'hind'), true);
+    assert.equal(matchesBodyPartFilter('hind_fetlock', 'hind'), true);
+    assert.equal(matchesBodyPartFilter('hind_fetlock', 'all'), true);
+  });
+
   it('partitions all 19 anatomical areas into 3 interactive body segments (Head & Neck: 4, Torso & Pelvis: 8, Limbs & Hooves: 7)', () => {
     assert.equal(BODY_SEGMENTS.length, 3);
     assert.deepEqual(
