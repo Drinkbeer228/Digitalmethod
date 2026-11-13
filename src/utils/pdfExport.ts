@@ -567,6 +567,47 @@ async function drawDiagramBoxOnPdf(
   }
 }
 
+// Invisible emoji helpers: variation selectors, ZWJ, skin-tone modifiers, keycap combiner
+const EMOJI_HELPER_CODEPOINTS = new Set<number>([
+  0xfe0e, 0xfe0f, 0x200d, 0x20e3, 0x1f3fb, 0x1f3fc, 0x1f3fd, 0x1f3fe, 0x1f3ff,
+]);
+// Pictographic emoji (some exist as monochrome glyphs in DejaVuSans, but are still emoji)
+const EMOJI_PICTOGRAPHIC_RE = /\p{Extended_Pictographic}/u;
+// Typographic marks that Unicode also classes as pictographic — keep them
+const KEEP_PICTOGRAPHIC = new Set<string>(['©', '®', '™']);
+
+/**
+ * Returns a sanitizer that removes emoji and any characters none of the embedded fonts
+ * can draw (pdf-lib would render those as empty boxes), then tidies the spaces left
+ * behind. Plain symbols such as ✓ → № × © are kept.
+ */
+export function makePdfTextSanitizer(fonts: PDFFont[]): (text: string) => string {
+  const supported = new Set<number>();
+  for (const font of fonts) {
+    for (const cp of font.getCharacterSet()) supported.add(cp);
+  }
+  return (text: string): string => {
+    if (!text) return text;
+    let out = '';
+    for (const ch of text) {
+      const cp = ch.codePointAt(0)!;
+      if (ch === '\n' || ch === '\t') {
+        out += ch;
+      } else if (
+        !EMOJI_HELPER_CODEPOINTS.has(cp) &&
+        supported.has(cp) &&
+        (KEEP_PICTOGRAPHIC.has(ch) || !EMOJI_PICTOGRAPHIC_RE.test(ch))
+      ) {
+        out += ch;
+      }
+    }
+    return out
+      .split('\n')
+      .map((line) => line.replace(/[ \t]{2,}/g, ' ').trim())
+      .join('\n');
+  };
+}
+
 function wrapTextToLines(
   text: string,
   font: PDFFont,
@@ -710,7 +751,8 @@ async function drawPhotoBand(
   width: number,
   regular: PDFFont,
   bold: PDFFont,
-  lang: Language
+  lang: Language,
+  clean: (text: string) => string = (text) => text
 ): Promise<void> {
   const bandH = PHOTO_BAND_HEIGHT;
   page.drawRectangle({
@@ -817,7 +859,7 @@ async function drawPhotoBand(
       });
 
       const time = formatPhotoTime(photo.createdAt);
-      const caption = [label.charAt(0) + label.slice(1).toLowerCase(), photo.caption?.trim(), time]
+      const caption = [label.charAt(0) + label.slice(1).toLowerCase(), clean(photo.caption ?? '').trim(), time]
         .filter(Boolean)
         .join(' · ');
       page.drawText(caption.slice(0, 48), {
@@ -844,6 +886,21 @@ export async function generateSessionPdfBytes(
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
   const { regular, bold } = await getEmbeddedFonts(pdfDoc);
+  // Strip emoji / glyphs the embedded fonts lack from user-entered text (data is untouched)
+  const clean = makePdfTextSanitizer([regular, bold]);
+  horse = {
+    ...horse,
+    name: clean(horse.name ?? ''),
+    breed: clean(horse.breed ?? ''),
+    age: clean(horse.age ?? ''),
+    job: clean(horse.job ?? ''),
+    owner: clean(horse.owner ?? ''),
+  };
+  session = {
+    ...session,
+    practitioner: clean(session.practitioner ?? ''),
+    duration: clean(session.duration ?? ''),
+  };
   const t = TRANSLATIONS[lang];
   const syncedSections = session.reportCustomized
     ? session.reportSections
@@ -1261,8 +1318,8 @@ export async function generateSessionPdfBytes(
   } else {
     areasToRender.forEach((area, rIdx) => {
       const row = session.evaluationTable[area.id];
-      const leftText = row ? formatCellSummaryText(row.left, lang) : '—';
-      const rightText = row ? formatCellSummaryText(row.right, lang) : '—';
+      const leftText = row ? clean(formatCellSummaryText(row.left, lang)) || '—' : '—';
+      const rightText = row ? clean(formatCellSummaryText(row.right, lang)) || '—' : '—';
       const areaName = `${area.index}. ${lang === 'ru' ? area.nameRu : area.nameEn}`;
 
       page2.drawRectangle({
@@ -1372,7 +1429,7 @@ export async function generateSessionPdfBytes(
     opts: { maxLines?: number; highlightAmber?: boolean } = {}
   ) => {
     const { maxLines, highlightAmber = false } = opts;
-    let lines = wrapTextToLines(bodyText, regular, NARRATIVE_FONT_SIZE, contentW - 16);
+    let lines = wrapTextToLines(clean(bodyText), regular, NARRATIVE_FONT_SIZE, contentW - 16);
     if (maxLines !== undefined) lines = lines.slice(0, maxLines);
 
     let idx = 0;
@@ -1450,7 +1507,7 @@ export async function generateSessionPdfBytes(
     const bandH = PHOTO_BAND_HEIGHT;
     // Leave room for at least a short Owner Care box below the photos
     if (flowY - bandH - 60 >= flowBottom) {
-      await drawPhotoBand(pdfDoc, flowPage, photoGroups, margin, flowY, contentW, regular, bold, lang);
+      await drawPhotoBand(pdfDoc, flowPage, photoGroups, margin, flowY, contentW, regular, bold, lang, clean);
       flowY -= bandH + 8;
     } else {
       const photoPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
@@ -1460,7 +1517,7 @@ export async function generateSessionPdfBytes(
           ? `ФОТО ДО / ПОСЛЕ — ${horse.name.toUpperCase()} (СЕССИЯ №${session.sessionNumber})`
           : `BEFORE / AFTER PHOTOS — ${horse.name.toUpperCase()} (SESSION #${session.sessionNumber})`
       );
-      await drawPhotoBand(pdfDoc, photoPage, photoGroups, margin, photoTopY, contentW, regular, bold, lang);
+      await drawPhotoBand(pdfDoc, photoPage, photoGroups, margin, photoTopY, contentW, regular, bold, lang, clean);
       pendingContinuation = { page: photoPage, y: photoTopY - bandH - 8 };
     }
   }
