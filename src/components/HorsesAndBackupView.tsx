@@ -10,6 +10,8 @@ import {
   InstalledWhisperModel,
   Language,
   ReportSections,
+  SessionPhoto,
+  SessionPhotoKind,
 } from '../types';
 import { TRANSLATIONS } from '../data/translations';
 import { DEMO_HORSE_ID } from '../data/demoCase';
@@ -55,6 +57,11 @@ interface HorsesAndBackupViewProps {
   onExportBackup: () => Promise<void>;
   onImportBackupFile: (file: File) => Promise<{ ok: boolean; message: string }>;
   onRefreshModels: () => Promise<void>;
+  /** Before / After photos of the currently active session (by sessionId). */
+  sessionPhotos?: SessionPhoto[];
+  sessionPhotosSessionId?: string;
+  onAddSessionPhotos?: (kind: SessionPhotoKind, files: File[]) => Promise<void>;
+  onDeleteSessionPhoto?: (photoId: string) => Promise<void>;
 }
 
 export const HorsesAndBackupView: React.FC<HorsesAndBackupViewProps> = ({
@@ -68,6 +75,10 @@ export const HorsesAndBackupView: React.FC<HorsesAndBackupViewProps> = ({
   onSelectHorseAndSession,
   onEditSessionOnMap,
   onUpdateReportSections,
+  sessionPhotos,
+  sessionPhotosSessionId,
+  onAddSessionPhotos,
+  onDeleteSessionPhoto,
   onCreateHorse,
   onUpdateHorse,
   onDeleteHorse,
@@ -213,6 +224,13 @@ export const HorsesAndBackupView: React.FC<HorsesAndBackupViewProps> = ({
                 ? () => onEditSessionOnMap(selectedHorse.id, selectedSession.id)
                 : undefined
             }
+            {...(sessionPhotos && sessionPhotosSessionId === selectedSession.id
+              ? {
+                  photos: sessionPhotos,
+                  onAddPhotos: onAddSessionPhotos,
+                  onDeletePhoto: onDeleteSessionPhoto,
+                }
+              : {})}
           />
         </div>
       )}

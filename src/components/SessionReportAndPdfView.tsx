@@ -6,8 +6,11 @@ import {
   HorseProfile,
   Language,
   ReportSections,
+  SessionPhoto,
+  SessionPhotoKind,
   Side,
 } from '../types';
+import { SessionPhotosPanel } from './SessionPhotosPanel';
 import { ANATOMICAL_AREAS, ANATOMICAL_REGIONS } from '../data/anatomicalAreas';
 import {
   formatChipLabel,
@@ -42,6 +45,9 @@ interface SessionReportAndPdfViewProps {
   lang: Language;
   onUpdateReportSections: (next: ReportSections, customized: boolean) => void;
   onEditOnMap?: () => void;
+  photos?: SessionPhoto[];
+  onAddPhotos?: (kind: SessionPhotoKind, files: File[]) => Promise<void>;
+  onDeletePhoto?: (photoId: string) => Promise<void>;
 }
 
 interface MarkedZoneEntry {
@@ -56,6 +62,9 @@ interface MarkedZoneEntry {
   side: Side;
   obs: AreaSideObservation;
 }
+
+// Stable empty default so the PDF pre-build effect does not re-run on every render
+const NO_PHOTOS: SessionPhoto[] = [];
 
 const ALL_RELEASE_CHIP_DEFS = [...QUICK_RELEASE_CHIPS, ...MORE_RELEASE_SIGNS];
 
@@ -90,6 +99,9 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
   lang,
   onUpdateReportSections,
   onEditOnMap,
+  photos = NO_PHOTOS,
+  onAddPhotos,
+  onDeletePhoto,
 }) => {
   const t = TRANSLATIONS[lang];
   const [preBuiltPdfFile, setPreBuiltPdfFile] = useState<File | null>(null);
@@ -104,7 +116,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
     setPreBuiltPdfFile(null);
     void (async () => {
       try {
-        const file = await buildSessionPdfFile(horse, session, lang);
+        const file = await buildSessionPdfFile(horse, session, lang, photos);
         if (!cancelled) {
           setPreBuiltPdfFile(file);
         }
@@ -115,7 +127,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
     return () => {
       cancelled = true;
     };
-  }, [horse, session, lang]);
+  }, [horse, session, lang, photos]);
 
   const handleSyncFromEvaluation = () => {
     const generated = buildReportFromSession(session, lang);
@@ -137,7 +149,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
       setIsGeneratingPdf(true);
       const pdfFile =
         preBuiltPdfFile ??
-        (await buildSessionPdfFile(horse, session, lang));
+        (await buildSessionPdfFile(horse, session, lang, photos));
       const outcome = await shareOrDownloadPdfFile(
         pdfFile,
         `Masterson Method Report — ${horse.name}`
@@ -166,7 +178,7 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
       setIsGeneratingPdf(true);
       const pdfFile =
         preBuiltPdfFile ??
-        (await buildSessionPdfFile(horse, session, lang));
+        (await buildSessionPdfFile(horse, session, lang, photos));
       triggerPdfFileDownload(pdfFile);
       setExportStatusMsg(
         lang === 'ru' ? `Скачан файл ${pdfFile.name}` : `Downloaded ${pdfFile.name}`
@@ -542,6 +554,30 @@ export const SessionReportAndPdfView: React.FC<SessionReportAndPdfViewProps> = (
               })}
             </div>
           )}
+        </div>
+
+        {/* BEFORE / AFTER SESSION PHOTOS (included in the A4 PDF) */}
+        <div
+          data-testid="pdf-session-photos-card"
+          className="rounded-xl border border-slate-300 bg-[#FAF9F6] p-4 space-y-2.5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xs md:text-sm font-bold text-[#1E2421]">
+              {lang === 'ru' ? 'Фото до / после' : 'Before / After Photos'}
+            </h3>
+            <span className="text-[11px] text-slate-500 font-medium">
+              {lang === 'ru'
+                ? 'Сжимаются на устройстве · попадают в PDF-отчёт'
+                : 'Compressed on-device · included in the PDF report'}
+            </span>
+          </div>
+          <SessionPhotosPanel
+            photos={photos}
+            lang={lang}
+            readOnly={!onAddPhotos || !onDeletePhoto}
+            onAddPhotos={onAddPhotos ?? (async () => undefined)}
+            onDeletePhoto={onDeletePhoto ?? (async () => undefined)}
+          />
         </div>
 
         {/* OWNER CARE NOTES (POST-SESSION RECOMMENDATIONS) EDITOR */}

@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { BodyworkSession, HorseProfile, Language } from '../types';
+import { BodyworkSession, HorseProfile, Language, SessionPhoto } from '../types';
 import { buildSessionPdfFile, shareOrDownloadPdfFile } from '../utils/pdfExport';
 import { countMarkedZoneSides } from '../utils/zoneEditing';
 import { AlertTriangle, Check, FileText, Loader2, RotateCw, Share2 } from 'lucide-react';
+
+const NO_PHOTOS: SessionPhoto[] = [];
 
 export type FinishPhase = 'saving' | 'saved' | 'error';
 
@@ -11,6 +13,8 @@ interface SessionFinishSheetProps {
   horse: HorseProfile;
   session: BodyworkSession;
   lang: Language;
+  /** Before / After photos embedded into the PDF */
+  photos?: SessionPhoto[];
   onRetry: () => void;
   onOpenReport: () => void;
   onClose: () => void;
@@ -26,6 +30,7 @@ export const SessionFinishSheet: React.FC<SessionFinishSheetProps> = ({
   horse,
   session,
   lang,
+  photos = NO_PHOTOS,
   onRetry,
   onOpenReport,
   onClose,
@@ -39,7 +44,7 @@ export const SessionFinishSheet: React.FC<SessionFinishSheetProps> = ({
     if (phase !== 'saved') return undefined;
     let cancelled = false;
     setPdfFile(null);
-    void buildSessionPdfFile(horse, session, lang)
+    void buildSessionPdfFile(horse, session, lang, photos)
       .then((file) => {
         if (!cancelled) setPdfFile(file);
       })
@@ -47,13 +52,13 @@ export const SessionFinishSheet: React.FC<SessionFinishSheetProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [phase, horse, session, lang]);
+  }, [phase, horse, session, lang, photos]);
 
   const handleShare = async () => {
     setIsSharing(true);
     setShareMsg(null);
     try {
-      const file = pdfFile ?? (await buildSessionPdfFile(horse, session, lang));
+      const file = pdfFile ?? (await buildSessionPdfFile(horse, session, lang, photos));
       const outcome = await shareOrDownloadPdfFile(
         file,
         `${horse.name} — #${session.sessionNumber}`
