@@ -27,7 +27,7 @@ import {
   TEST_JPEG_PORTRAIT_DATA_URL,
 } from './photoTestFixtures';
 import { buildReportFromSession, getUnifiedSessionNotes } from './reportGenerator';
-import { buildPdfFileName, generateSessionPdfBytes, groupPhotosForPdf } from './pdfExport';
+import { buildPdfFileName, fitTextToWidth, generateSessionPdfBytes, groupPhotosForPdf } from './pdfExport';
 import { PDF_PRESETS } from './pdfExportOptions';
 
 /** Extracts PDF text with poppler's pdftotext; returns null when the tool is unavailable. */
@@ -533,6 +533,48 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
       assert.ok(ru.includes('Сессия №2 · 2026-04-17'));
       assert.ok(!ru.includes('№ #') && !ru.includes('№#'));
       assert.ok(!ru.includes('[Паттерн №4]'));
+    }
+  });
+
+  it('fitTextToWidth keeps text within the width, adding an ellipsis only when needed', async () => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont('Helvetica');
+    assert.equal(fitTextToWidth('Short', font, 8, 100), 'Short');
+    const long = 'Certification Student (Demo) with a very long practitioner name';
+    const fitted = fitTextToWidth(long, font, 8, 90);
+    assert.ok(fitted.endsWith('…'));
+    assert.ok(font.widthOfTextAtSize(fitted, 8) <= 90);
+    assert.ok(long.startsWith(fitted.slice(0, -1)));
+    assert.equal(fitTextToWidth(long, font, 8, 1), '');
+  });
+
+  it('page-1 metadata: long practitioner and owner names stay inside their own columns', async () => {
+    const { horse, session } = makeTestFixtures();
+    session.practitioner = 'Certification Student (Demo) Anna-Maria Petrova-Vodkina';
+    horse.owner = 'Circus Equestrian Troupe of the Northern Lights';
+    for (const lang of ['ru', 'en'] as const) {
+      const bytes = await generateSessionPdfBytes(horse, session, lang);
+      assert.equal((await PDFDocument.load(bytes)).getPageCount(), 2);
+      const dir = mkdtempSync(join(tmpdir(), 'pdf-bbox-'));
+      try {
+        const file = join(dir, 'r.pdf');
+        writeFileSync(file, bytes);
+        const res = spawnSync('pdftotext', ['-bbox', '-f', '1', '-l', '1', '-enc', 'UTF-8', file, '-'], { encoding: 'utf8' });
+        if (res.error || res.status !== 0) continue;
+        const words = [...res.stdout.matchAll(/<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="[\d.]+">([^<]*)<\/word>/g)]
+          .map((m) => ({ xMin: +m[1], yMin: +m[2], xMax: +m[3], text: m[4] }));
+        // The practitioner value starts with "Certification"; its row must end before the next column
+        const start = words.find((w) => w.text === 'Certification');
+        assert.ok(start, 'practitioner value is printed');
+        const colW = (595.28 - 56) / 4;
+        const colIdx = Math.floor((start.xMin - 28) / colW);
+        const colRight = 28 + (colIdx + 1) * colW;
+        const sameRow = words.filter((w) => Math.abs(w.yMin - start.yMin) < 1 && w.xMin >= start.xMin && w.xMin < colRight);
+        for (const w of sameRow) assert.ok(w.xMax <= colRight, `"${w.text}" overflows into the next column (${w.xMax} > ${colRight})`);
+        assert.ok(sameRow.some((w) => w.text.endsWith('…')), 'long value is ellipsized');
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     }
   });
 

@@ -624,6 +624,26 @@ export function toPdfAscii(text: string): string {
   return text.replace(/ø/g, 'o').replace(/Ø/g, 'O').replace(/®/g, '(R)');
 }
 
+/**
+ * Shortens text with a trailing ellipsis so it fits within maxWidth at the given size.
+ * Returns the text unchanged when it already fits.
+ */
+export function fitTextToWidth(text: string, font: PDFFont, size: number, maxWidth: number): string {
+  if (font.widthOfTextAtSize(text, size) <= maxWidth) return text;
+  const ellipsis = '…';
+  const chars = Array.from(text);
+  let lo = 0;
+  let hi = chars.length;
+  // Longest prefix that fits together with the ellipsis
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const candidate = chars.slice(0, mid).join('').trimEnd() + ellipsis;
+    if (font.widthOfTextAtSize(candidate, size) <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo > 0 ? chars.slice(0, lo).join('').trimEnd() + ellipsis : '';
+}
+
 function wrapTextToLines(
   text: string,
   font: PDFFont,
@@ -985,9 +1005,12 @@ export async function generateSessionPdfBytes(
     metaPairs.push({ label: t.durationLabel, value: session.duration.trim() });
   }
 
+  // Each cell: small label above its value, both clipped to the cell's column so a long
+  // practitioner / owner name can never run into the neighbouring column.
   const cols = 4;
   const rowsCount = Math.ceil(metaPairs.length / cols);
-  const metaBoxH = rowsCount * 16 + 10;
+  const metaRowH = 21;
+  const metaBoxH = rowsCount * metaRowH + 8;
 
   page1.drawRectangle({
     x: margin,
@@ -1000,23 +1023,22 @@ export async function generateSessionPdfBytes(
   });
 
   const colW = contentW / cols;
+  const cellMaxW = colW - 8 - 6; // left padding + gap before the next column
   metaPairs.forEach((item, idx) => {
     const r = Math.floor(idx / cols);
     const c = idx % cols;
     const x = margin + 8 + c * colW;
-    const y = cursorY - 14 - r * 16;
-    const labelStr = `${item.label}: `;
-    const lw = regular.widthOfTextAtSize(labelStr, 7.5);
-    page1.drawText(labelStr, {
+    const labelY = cursorY - 11 - r * metaRowH;
+    page1.drawText(fitTextToWidth(item.label, regular, 6.6, cellMaxW), {
       x,
-      y,
-      size: 7.5,
+      y: labelY,
+      size: 6.6,
       font: regular,
       color: COLOR_MUTED,
     });
-    page1.drawText(item.value.slice(0, 26), {
-      x: x + lw,
-      y,
+    page1.drawText(fitTextToWidth(item.value, bold, 7.8, cellMaxW), {
+      x,
+      y: labelY - 9,
       size: 7.8,
       font: bold,
       color: COLOR_CHARCOAL,
