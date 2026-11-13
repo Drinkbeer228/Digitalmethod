@@ -327,6 +327,8 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
     const text = extractPdfText(longBytes);
     if (text !== null) {
       assert.ok(text.includes('NOTES-END-MARKER-7Q'), 'last session-notes line must be in the PDF');
+      assert.ok(text.includes('[Pattern #10] appended insight'), 'insight text kept');
+      assert.ok(!text.includes('💡'), 'emoji must be stripped from the PDF');
       assert.ok(text.includes('Line 80:'), 'every session-notes line must be in the PDF');
       assert.ok(text.includes('CARE-END-MARKER-3Z'), 'last owner-care line must be in the PDF');
       assert.ok(text.includes(`Page ${longDoc.getPageCount()} / ${longDoc.getPageCount()}`));
@@ -353,6 +355,27 @@ describe('Complete Masterson Taxonomy, Lower-Limb Hit Targets & Offline A4 PDF E
     if (photoText !== null) {
       assert.ok(photoText.includes('NOTES-END-MARKER-7Q'));
       assert.ok(photoText.includes('CARE-END-MARKER-3Z'));
+    }
+  });
+
+  it('strips emoji the embedded font cannot draw, keeping supported symbols like ✓', async () => {
+    const { horse, session } = makeTestFixtures();
+    horse.name = 'Altair 🐎';
+    session.generalNotes = 'Softened 💡 after yawns ✓ 🐴👍🏽 done 😌 №2';
+    session.manualVoiceNotes = '';
+    session.evaluationTable.poll_top_atlas.left.note = '😌 Soft';
+
+    const bytes = await generateSessionPdfBytes(horse, session, 'en');
+    assert.equal((await PDFDocument.load(bytes)).getPageCount(), 2);
+
+    const text = extractPdfText(bytes);
+    if (text !== null) {
+      assert.ok(text.includes('Softened after yawns ✓ done №2'), 'emoji removed, spacing tidy, ✓ № kept');
+      assert.ok(text.includes('Altair'));
+      for (const emoji of ['💡', '🐴', '👍', '🐎', '😌', '\u{1F3FD}', '\uFE0F']) {
+        assert.ok(!text.includes(emoji), `emoji ${emoji} must be stripped`);
+      }
+      assert.ok(!text.includes('\uFFFD'));
     }
   });
 
