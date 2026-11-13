@@ -832,7 +832,7 @@ async function drawPhotoBand(
 }
 
 /**
- * Generates a unified 2-page A4 PDF document (Uint8Array) 100% offline using pdf-lib,
+ * Generates a unified A4 PDF document (2 pages; more when long notes overflow) (Uint8Array) 100% offline using pdf-lib,
  * embedded DejaVuSans TrueType fonts (Latin + Cyrillic), high-DPI composited diagrams,
  * and crisp vector markers.
  */
@@ -1158,30 +1158,34 @@ export async function generateSessionPdfBytes(
   // =========================================================================
   // PAGE 2: UNIFIED EVALUATED ZONES SUMMARY TABLE & SESSION NOTES
   // =========================================================================
-  const page2 = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
-  let p2Y = A4_HEIGHT - margin;
-
-  // Page 2 Header
-  page2.drawRectangle({
-    x: margin,
-    y: p2Y - 28,
-    width: contentW,
-    height: 28,
-    color: COLOR_FOREST,
-  });
-  page2.drawText(
-    lang === 'ru'
-      ? `СВОДКА ОТМЕЧЕННЫХ ЗОН И ЗАМЕТКИ СЕССИИ — ${horse.name.toUpperCase()} (СЕССИЯ №${session.sessionNumber})`
-      : `EVALUATED ZONES SUMMARY & SESSION NOTES — ${horse.name.toUpperCase()} (SESSION #${session.sessionNumber})`,
-    {
+  // Forest header strip shared by page 2, the photo page and continuation pages.
+  // Returns the cursor Y just below the strip.
+  const drawPageHeaderStrip = (page: PDFPage, text: string): number => {
+    const topY = A4_HEIGHT - margin;
+    page.drawRectangle({
+      x: margin,
+      y: topY - 28,
+      width: contentW,
+      height: 28,
+      color: COLOR_FOREST,
+    });
+    page.drawText(text, {
       x: margin + 10,
-      y: p2Y - 18,
+      y: topY - 18,
       size: 9.5,
       font: bold,
       color: COLOR_WHITE,
-    }
+    });
+    return topY - 36;
+  };
+
+  const page2 = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+  let p2Y = drawPageHeaderStrip(
+    page2,
+    lang === 'ru'
+      ? `СВОДКА ОТМЕЧЕННЫХ ЗОН И ЗАМЕТКИ СЕССИИ — ${horse.name.toUpperCase()} (СЕССИЯ №${session.sessionNumber})`
+      : `EVALUATED ZONES SUMMARY & SESSION NOTES — ${horse.name.toUpperCase()} (SESSION #${session.sessionNumber})`
   );
-  p2Y -= 36;
 
   // Unified Table: Evaluated / Marked anatomical zones
   const areasToRender = ANATOMICAL_AREAS.filter((a) => {
@@ -1328,108 +1332,143 @@ export async function generateSessionPdfBytes(
 
   p2Y -= 12;
 
-  // Helper to draw a structured narrative section box on Page 2
+  // ---------------------------------------------------------------------
+  // Flowing narrative sections: start below the table on page 2 and continue
+  // on extra pages (same header strip, footers added below) when space runs out.
+  // ---------------------------------------------------------------------
+  let flowPage: PDFPage = page2;
+  let flowY = p2Y;
+  const flowBottom = margin + 8;
+  // A page already holding content (the photo page) where text continues next
+  let pendingContinuation: { page: PDFPage; y: number } | null = null;
+
+  const nextFlowPage = () => {
+    if (pendingContinuation) {
+      flowPage = pendingContinuation.page;
+      flowY = pendingContinuation.y;
+      pendingContinuation = null;
+      return;
+    }
+    flowPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+    flowY = drawPageHeaderStrip(
+      flowPage,
+      lang === 'ru'
+        ? `ЗАМЕТКИ СЕССИИ (ПРОДОЛЖЕНИЕ) — ${horse.name.toUpperCase()} (СЕССИЯ №${session.sessionNumber})`
+        : `SESSION NOTES (CONTINUED) — ${horse.name.toUpperCase()} (SESSION #${session.sessionNumber})`
+    );
+  };
+
+  const NARRATIVE_FONT_SIZE = 7.6;
+  const NARRATIVE_LINE_H = 10.5;
+  const NARRATIVE_HEAD_H = 18;
+  const NARRATIVE_PAD = 6;
+  const continuedSuffix = lang === 'ru' ? ' (продолжение)' : ' (cont.)';
+
+  // Draws a structured narrative box; long text is split across pages, never dropped
+  // (unless an explicit maxLines cap is given for short generated summaries).
   const drawNarrativeSection = (
     sectionTitle: string,
     bodyText: string,
-    maxLines: number,
-    highlightAmber = false
+    opts: { maxLines?: number; highlightAmber?: boolean } = {}
   ) => {
-    if (p2Y < margin + 36) return;
-    const wrapped = wrapTextToLines(bodyText, regular, 7.6, contentW - 16).slice(
-      0,
-      maxLines
-    );
-    const boxH = 18 + wrapped.length * 10.5 + 6;
-    page2.drawRectangle({
-      x: margin,
-      y: p2Y - boxH,
-      width: contentW,
-      height: boxH,
-      color: highlightAmber ? COLOR_AMBER_BG : COLOR_PARCHMENT,
-      borderColor: highlightAmber ? COLOR_AMBER_BORDER : COLOR_BORDER,
-      borderWidth: highlightAmber ? 1.1 : 0.65,
-    });
-    page2.drawText(sectionTitle, {
-      x: margin + 8,
-      y: p2Y - 12,
-      size: 8,
-      font: bold,
-      color: highlightAmber ? COLOR_CHARCOAL : COLOR_FOREST,
-    });
-    wrapped.forEach((line, lIdx) => {
-      page2.drawText(line, {
-        x: margin + 8,
-        y: p2Y - 24 - lIdx * 10.5,
-        size: 7.6,
-        font: regular,
-        color: COLOR_CHARCOAL,
+    const { maxLines, highlightAmber = false } = opts;
+    let lines = wrapTextToLines(bodyText, regular, NARRATIVE_FONT_SIZE, contentW - 16);
+    if (maxLines !== undefined) lines = lines.slice(0, maxLines);
+
+    let idx = 0;
+    let firstChunk = true;
+    while (idx < lines.length) {
+      if (!firstChunk) {
+        // Do not start a continued box with a blank paragraph separator
+        while (idx < lines.length && lines[idx] === '') idx++;
+        if (idx >= lines.length) break;
+      }
+      const remaining = lines.length - idx;
+      const minLines = Math.min(2, remaining);
+      const fixedH = NARRATIVE_HEAD_H + NARRATIVE_PAD;
+      if (flowY - fixedH - minLines * NARRATIVE_LINE_H < flowBottom) {
+        nextFlowPage();
+      }
+      const fit = Math.max(
+        1,
+        Math.floor((flowY - flowBottom - fixedH) / NARRATIVE_LINE_H)
+      );
+      const chunk = lines.slice(idx, idx + fit);
+      const boxH = fixedH + chunk.length * NARRATIVE_LINE_H;
+      const page = flowPage;
+      const topY = flowY;
+
+      page.drawRectangle({
+        x: margin,
+        y: topY - boxH,
+        width: contentW,
+        height: boxH,
+        color: highlightAmber ? COLOR_AMBER_BG : COLOR_PARCHMENT,
+        borderColor: highlightAmber ? COLOR_AMBER_BORDER : COLOR_BORDER,
+        borderWidth: highlightAmber ? 1.1 : 0.65,
       });
-    });
-    p2Y -= boxH + 8;
+      page.drawText(firstChunk ? sectionTitle : `${sectionTitle}${continuedSuffix}`, {
+        x: margin + 8,
+        y: topY - 12,
+        size: 8,
+        font: bold,
+        color: highlightAmber ? COLOR_CHARCOAL : COLOR_FOREST,
+      });
+      chunk.forEach((line, lIdx) => {
+        page.drawText(line, {
+          x: margin + 8,
+          y: topY - 24 - lIdx * NARRATIVE_LINE_H,
+          size: NARRATIVE_FONT_SIZE,
+          font: regular,
+          color: COLOR_CHARCOAL,
+        });
+      });
+
+      flowY -= boxH + 8;
+      idx += chunk.length;
+      firstChunk = false;
+    }
   };
 
-  // 1. Response, Release & Guarding Signs
-  drawNarrativeSection(
-    t.sec3Title,
-    syncedSections.releaseSignsObserved,
-    4
-  );
+  // 1. Response, Release & Guarding Signs (generated summary, capped)
+  drawNarrativeSection(t.sec3Title, syncedSections.releaseSignsObserved, { maxLines: 4 });
 
   // 2. Predominant Diagonal (if marked)
   if (session.annotations.some((a) => a.kind === 'diagonal')) {
-    drawNarrativeSection(
-      t.sec4Title,
-      syncedSections.predominantDiagonal,
-      2
-    );
+    drawNarrativeSection(t.sec4Title, syncedSections.predominantDiagonal, { maxLines: 2 });
   }
 
-  // 3. Unified Session Notes & Techniques Used
+  // 3. Unified Session Notes & Techniques Used — full text, flows onto extra pages
   const unifiedSessionText =
     getUnifiedSessionNotes(session) || syncedSections.sessionNotes;
-  drawNarrativeSection(
-    t.sec5Title,
-    unifiedSessionText,
-    6
-  );
+  drawNarrativeSection(t.sec5Title, unifiedSessionText);
 
-  // 4. Before / After Photos (page 2 when it fits, otherwise a dedicated page 3)
+  // 4. Before / After Photos (current flow page when it fits, otherwise a dedicated page;
+  //    text that no longer fits on the current page then continues below the photos)
   const photoGroups = groupPhotosForPdf(photos);
   if (photoGroups.before.length > 0 || photoGroups.after.length > 0) {
     const bandH = PHOTO_BAND_HEIGHT;
-    // Leave room on page 2 for at least a short Owner Care box below the photos
-    if (p2Y - bandH - 60 >= margin + 8) {
-      await drawPhotoBand(pdfDoc, page2, photoGroups, margin, p2Y, contentW, regular, bold, lang);
-      p2Y -= bandH + 8;
+    // Leave room for at least a short Owner Care box below the photos
+    if (flowY - bandH - 60 >= flowBottom) {
+      await drawPhotoBand(pdfDoc, flowPage, photoGroups, margin, flowY, contentW, regular, bold, lang);
+      flowY -= bandH + 8;
     } else {
-      const page3 = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
-      let p3Y = A4_HEIGHT - margin;
-      page3.drawRectangle({
-        x: margin,
-        y: p3Y - 28,
-        width: contentW,
-        height: 28,
-        color: COLOR_FOREST,
-      });
-      page3.drawText(
+      const photoPage = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+      const photoTopY = drawPageHeaderStrip(
+        photoPage,
         lang === 'ru'
           ? `ФОТО ДО / ПОСЛЕ — ${horse.name.toUpperCase()} (СЕССИЯ №${session.sessionNumber})`
-          : `BEFORE / AFTER PHOTOS — ${horse.name.toUpperCase()} (SESSION #${session.sessionNumber})`,
-        { x: margin + 10, y: p3Y - 18, size: 9.5, font: bold, color: COLOR_WHITE }
+          : `BEFORE / AFTER PHOTOS — ${horse.name.toUpperCase()} (SESSION #${session.sessionNumber})`
       );
-      p3Y -= 36;
-      await drawPhotoBand(pdfDoc, page3, photoGroups, margin, p3Y, contentW, regular, bold, lang);
+      await drawPhotoBand(pdfDoc, photoPage, photoGroups, margin, photoTopY, contentW, regular, bold, lang);
+      pendingContinuation = { page: photoPage, y: photoTopY - bandH - 8 };
     }
   }
 
-  // 5. Post-Session Care Recommendations
-  drawNarrativeSection(
-    t.sec6Title,
-    syncedSections.postSessionCareNotes,
-    6,
-    true
-  );
+  // 5. Post-Session Care Recommendations — full text, flows onto extra pages
+  drawNarrativeSection(t.sec6Title, syncedSections.postSessionCareNotes, {
+    highlightAmber: true,
+  });
 
   // Footers on every page: "<horse> · Session #N · date · Page X / Y"
   const allPages = pdfDoc.getPages();
