@@ -20,9 +20,19 @@ export interface SourceRef {
   quote?: string;
 }
 
+/**
+ * Primary sources only (secondary reviews that quote these dissections are not cited):
+ * - Elbrønd V.S., Schultz R.M. (2015). Myofascia — the unexplored tissue: myofascial kinetic
+ *   lines in horses, a model for describing locomotion using comparative dissection studies
+ *   derived from human lines. Medical Research Archives 3. — the 7 superficial/spiral/limb lines.
+ * - Elbrønd V.S., Schultz R.M. (2021). Deep myofascial kinetic lines in horses, comparative
+ *   dissection studies derived from humans. Open Journal of Veterinary Medicine 11(1), 14–40.
+ *   — deep lines and front-limb add-/abduction lines; summary (p. 38) gives eleven lines.
+ * - Masterson J. (2012). Beyond Horse Massage. — techniques, release points, pressure terms.
+ */
 const ES2015 = 'Elbrønd & Schultz 2015, Medical Research Archives 3';
 const ES2021 = 'Elbrønd & Schultz 2021, Open Journal of Veterinary Medicine 11(1)';
-const BHM = 'J. Masterson, Beyond Horse Massage';
+const BHM = 'J. Masterson 2012, Beyond Horse Massage';
 
 // ---------------------------------------------------------------------------
 // Myofascial kinetic lines
@@ -48,10 +58,16 @@ export interface MyofascialLineMeta {
   ref: SourceRef;
 }
 
+/**
+ * The eleven lines named by Elbrønd & Schultz (2021, p. 38). The Lateral Line is one entry:
+ * one functional chain that splits on the trunk into a superficial branch (SLL: m. cutaneus
+ * trunci, fascia lata, m. gluteus superficialis) and a deep branch (DLL: oblique abdominals,
+ * intercostal fascia to the costal arch); both converge on the tuber coxae (2015, pp. 6–7).
+ */
 export const MYOFASCIAL_LINES: MyofascialLineMeta[] = [
   { id: 'SDL', nameEn: 'Superficial Dorsal Line', nameRu: 'Поверхностная дорсальная линия', ref: { source: ES2015, page: 'pp. 3–5' } },
   { id: 'SVL', nameEn: 'Superficial Ventral Line', nameRu: 'Поверхностная вентральная линия', ref: { source: ES2015, page: 'pp. 5–6' } },
-  { id: 'LL', nameEn: 'Lateral Line (superficial & deep)', nameRu: 'Латеральная линия (поверхностная и глубокая)', ref: { source: ES2015, page: 'pp. 6–7' } },
+  { id: 'LL', nameEn: 'Lateral Line (SLL + DLL branches)', nameRu: 'Латеральная линия (ветви SLL и DLL)', ref: { source: ES2015, page: 'pp. 6–7' } },
   { id: 'SL', nameEn: 'Spiral Line', nameRu: 'Спиральная линия', ref: { source: ES2015, page: 'pp. 7–8' } },
   { id: 'FL', nameEn: 'Functional Line', nameRu: 'Функциональная линия', ref: { source: ES2015, page: 'pp. 8–9' } },
   { id: 'FLPL', nameEn: 'Front Limb Protraction Line', nameRu: 'Линия протракции передней конечности', ref: { source: ES2015, page: 'pp. 9–10' } },
