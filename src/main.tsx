@@ -2,6 +2,9 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { APP_BASE_URL, assetUrl } from './utils/assetUrl';
+import { connectStation } from './station/link';
+
+connectStation();
 
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   const initOfflineSW = async () => {

@@ -87,6 +87,8 @@ export const PWAInstallAction: React.FC<{ lang: Language }> = ({ lang }) => {
 
   if (isInstalled) return null;
 
+  // Inside Research Station the app runs in an iframe, where it cannot be installed.
+  if (typeof document !== 'undefined' && document.documentElement.classList.contains('ers-embedded')) return null;
   return (
     <>
       <button
