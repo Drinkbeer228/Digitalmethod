@@ -1127,7 +1127,10 @@ export default function App() {
                 { id: 'horses' as const, label: t.navHorses, Icon: FolderOpen },
                 { id: 'practice' as const, label: t.navPractice, Icon: Hand },
               ]
-            ).map(({ id, label, Icon }) => (
+            )
+              // On a phone a fourth tab squeezes the session picker: there Practice lives in the «⋯» menu.
+              .filter(({ id }) => id !== 'practice' || isDesktop)
+              .map(({ id, label, Icon }) => (
               <button
                 key={id}
                 type="button"
@@ -1610,6 +1613,19 @@ export default function App() {
                         <span>{t.redo}</span>
                       </button>
                     )}
+                    <button
+                      type="button"
+                      data-testid="header-practice-btn"
+                      aria-current={activeTab === 'practice' ? 'page' : undefined}
+                      onClick={() => {
+                        setIsHeaderMenuOpen(false);
+                        setActiveTab('practice');
+                      }}
+                      className="w-full min-h-[44px] px-3 inline-flex items-center gap-2 rounded-lg border border-slate-300 text-xs font-semibold text-[#1E2421] cursor-pointer"
+                    >
+                      <Hand className="w-4 h-4" />
+                      <span>{t.navPractice}</span>
+                    </button>
                     <button
                       type="button"
                       data-testid="header-settings-btn"

@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   BRACE_AT,
+  LIGHT_MAX,
+  LIGHT_MIN,
   createPractice,
   ELEPHANT_ZONES,
   PRACTICE,
@@ -22,8 +24,11 @@ export function MastersonPractice({ lang }: { lang: 'ru' | 'en' }) {
   const ru = lang === 'ru';
   const [pressure, setPressure] = useState(0);
   const [state, setState] = useState<PracticeState>(() => createPractice());
-  /** The score once the session ended, and whether it reached the station's summary. */
-  const [saved, setSaved] = useState<{ score: number; ok: boolean } | null>(null);
+  /**
+   * The score once the session ended and whether it reached the station's summary. Outside the station (`local`)
+   * nothing is written: the passport counts only sessions done in the station's clinic.
+   */
+  const [saved, setSaved] = useState<{ score: number; ok: boolean; local?: boolean } | null>(null);
   const pressureRef = useRef(0);
   pressureRef.current = pressure;
   const embedded = typeof window !== 'undefined' && embeddedNow();
@@ -42,7 +47,7 @@ export function MastersonPractice({ lang }: { lang: 'ru' | 'en' }) {
   useEffect(() => {
     if (state.phase === 'released' && saved === null) {
       const sc = score(state);
-      setSaved({ score: sc, ok: recordPractice(PRACTICE.itemId, sc) });
+      setSaved(embedded ? { score: sc, ok: recordPractice(PRACTICE.itemId, sc) } : { score: sc, ok: true, local: true });
     }
   }, [state, saved]);
 
@@ -55,7 +60,17 @@ export function MastersonPractice({ lang }: { lang: 'ru' | 'en' }) {
   const phase = state.phase;
   const held = (stayProgress(state) * 2).toLocaleString(ru ? 'ru-RU' : 'en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const target = ELEPHANT_ZONES.find((z) => z.id === PRACTICE.zoneId)!;
-  const level = pressure >= BRACE_AT ? (ru ? 'сильное' : 'firm') : pressure >= 33 ? (ru ? 'среднее' : 'medium') : pressure > 0 ? (ru ? 'лёгкое' : 'light') : ru ? 'нет касания' : 'no touch';
+  // The words follow the session's own thresholds: «лёгкое» is exactly the light window.
+  const level =
+    pressure >= BRACE_AT
+      ? ru ? 'сильное' : 'firm'
+      : pressure > LIGHT_MAX
+        ? ru ? 'среднее' : 'medium'
+        : pressure >= LIGHT_MIN
+          ? ru ? 'лёгкое' : 'light'
+          : pressure > 0
+            ? ru ? 'едва касается' : 'barely touching'
+            : ru ? 'нет касания' : 'no touch';
 
   return (
     <section data-testid="masterson-practice" aria-labelledby="practice-title" className="max-w-3xl mx-auto space-y-4">
@@ -173,7 +188,11 @@ export function MastersonPractice({ lang }: { lang: 'ru' | 'en' }) {
       {phase === 'released' && (
         <div data-testid="practice-result" className="rounded-xl border border-[#2B4C3F] bg-[#2B4C3F]/5 p-3 space-y-3">
           <p className="text-sm text-[#1E2421]" data-testid="practice-saved" data-ok={saved?.ok ? '1' : '0'}>
-            {saved && !saved.ok
+            {saved?.local
+              ? ru
+                ? `Сеанс завершён: ${saved.score} баллов. В Студенческий билет результат попадает, только когда сеанс проходит в клинике станции.`
+                : `Session complete: ${saved.score} points. The student ID counts sessions done in the station's clinic only.`
+              : saved && !saved.ok
               ? ru
                 ? `Сеанс завершён: ${saved.score} баллов, но результат не записался в Студенческий билет — память браузера недоступна.`
                 : `Session complete: ${saved.score} points, but the result did not reach the student ID — browser storage is unavailable.`
