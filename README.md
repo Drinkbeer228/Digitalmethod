@@ -21,6 +21,8 @@ An offline-first field notebook for equine bodywork practitioners. It records a 
 - **English and Russian** interface and reports.
 - **Works offline** once loaded: service worker, local fonts, local model cache.
 
+- **Practice (Research Station clinic).** A game session of the Masterson Method on an elephant: muscle zones of Pretty's left side, palm pressure on a slider, Search–Response–Stay–Release — the light touch brings a response (blink, ear flick), a 2 s stay brings the release (licking, chewing, a yawn); firm pressure makes her brace, lifting the palm loses the response. Inside the station (`?embedded=1`) the tab opens first, the result goes to `ers_progress_v1:somatic` as `masterson-release/shoulder-pretty` (`practice`, `done`, best score) and «Back to the station» sends `close-request`. Logic: `src/practice/masterson.ts`.
+
 ## What the app does not do
 
 Palpation of a standing horse cannot tell primary lameness from compensatory movement; that needs gait analysis and a veterinary exam. The app records findings and shows source-backed reference material. It makes no diagnosis, and the reports say so.

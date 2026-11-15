@@ -214,7 +214,14 @@ export async function ensureInitialSeed(): Promise<{
   }
 
   const savedLang = (await getSetting('language')) as Language | undefined;
-  const language: Language = savedLang === 'ru' ? 'ru' : 'en';
+  // Inside the Research Station (Russian) the default is Russian; a language the user chose always wins.
+  let inStation = false;
+  try {
+    inStation = typeof window !== 'undefined' && window.parent !== window && new URLSearchParams(window.location.search).get('embedded') === '1';
+  } catch {
+    inStation = true;
+  }
+  const language: Language = savedLang === 'ru' || savedLang === 'en' ? savedLang : inStation ? 'ru' : 'en';
 
   const savedHorseId = await getSetting('activeHorseId');
   const activeHorse =

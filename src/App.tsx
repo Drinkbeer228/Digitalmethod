@@ -73,12 +73,15 @@ import { BodyPartFilterBar } from './components/BodyPartFilterBar';
 import { FinishPhase, SessionFinishSheet } from './components/SessionFinishSheet';
 import { UpdateCellOptions } from './components/ZoneEditorSheet';
 import { OfflineConnectivityBanner, PWAInstallAction } from './pwa/PWAInstallBanner';
+import { MastersonPractice } from './practice/MastersonPractice';
+import { embeddedNow } from './station/link';
 import {
   Camera,
   Check,
   ChevronDown,
   FileText,
   FolderOpen,
+  Hand,
   Lightbulb,
   ListChecks,
   Mic,
@@ -90,7 +93,7 @@ import {
   X,
 } from 'lucide-react';
 
-type ActiveTab = 'editor' | 'report' | 'horses' | 'settings';
+type ActiveTab = 'editor' | 'report' | 'horses' | 'settings' | 'practice';
 type SaveStatus = 'saved' | 'saving' | 'error';
 
 const DIAGONAL_PRESETS: Array<{
@@ -112,7 +115,8 @@ interface EvaluationHistorySnapshot {
 
 export default function App() {
   const [ready, setReady] = useState(false);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('editor');
+  // Inside the station's clinic the practical session comes first; the notebook stays one tab away.
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => (typeof window !== 'undefined' && embeddedNow() ? 'practice' : 'editor'));
   // Each screen starts at its top: the page scroll is shared between tabs.
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -1121,6 +1125,7 @@ export default function App() {
                 { id: 'editor' as const, label: t.navCaseEditor, Icon: ListChecks },
                 { id: 'report' as const, label: t.navReport, Icon: FileText },
                 { id: 'horses' as const, label: t.navHorses, Icon: FolderOpen },
+                { id: 'practice' as const, label: t.navPractice, Icon: Hand },
               ]
             ).map(({ id, label, Icon }) => (
               <button
@@ -1359,6 +1364,8 @@ export default function App() {
       >
         {activeTab === 'settings' ? (
           settingsView
+        ) : activeTab === 'practice' ? (
+          <MastersonPractice lang={lang === 'ru' ? 'ru' : 'en'} />
         ) : !activeHorse || !activeSession ? (
           horsesView
         ) : activeTab === 'editor' ? (
