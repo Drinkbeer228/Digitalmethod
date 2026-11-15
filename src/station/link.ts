@@ -52,6 +52,33 @@ export function recordPractice(id: string, score: number, s: Store | null = stor
   }
 }
 
+export interface SomaticProgressRecord {
+  schema: string;
+  module: string;
+  updatedAt: string;
+  items: Record<string, ProgressItem>;
+}
+
+/** Reads the saved `ers_progress_v1:somatic` record safely, or null if absent/invalid. */
+export function readSomaticProgress(s: Store | null = store()): SomaticProgressRecord | null {
+  if (!s) return null;
+  try {
+    const parsed = JSON.parse(s.getItem(PROGRESS_KEY) ?? 'null');
+    if (
+      parsed &&
+      parsed.schema === 'ers.progress/1' &&
+      parsed.module === MODULE &&
+      parsed.items &&
+      typeof parsed.items === 'object'
+    ) {
+      return parsed as SomaticProgressRecord;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function framed(win: Window): boolean {
   try {
     return win.parent !== win;
@@ -63,6 +90,22 @@ function framed(win: Window): boolean {
 /** Whether the app runs inside the station's tablet. */
 export function embeddedNow(win: Window = window): boolean {
   return isEmbedded(win.location.search, framed(win));
+}
+
+/**
+ * Dispatches `{ type: 'ers:close-request' }` via `postMessage` to `location.origin`
+ * from the Station Clinic mode (`#/station` or `?mode=station`).
+ */
+export function sendStationCloseRequest(win: Window = window): boolean {
+  try {
+    const origin = win.location?.origin;
+    if (!origin || origin === 'null') return false;
+    const target = win.parent ?? win;
+    target.postMessage({ type: 'ers:close-request' }, origin);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Asks the station to close the tablet; outside the station nothing happens. */
@@ -80,13 +123,13 @@ export function isEmbedded(search: string, framed: boolean): boolean {
 }
 
 export function connectStation(win: Window = window): boolean {
-  let framed = false;
+  let isInFrame = false;
   try {
-    framed = win.parent !== win;
+    isInFrame = win.parent !== win;
   } catch {
-    framed = true;
+    isInFrame = true;
   }
-  if (!isEmbedded(win.location.search, framed)) return false;
+  if (!isEmbedded(win.location.search, isInFrame)) return false;
   win.document.documentElement.classList.add('ers-embedded');
   try {
     win.parent.postMessage({ ers: 1, module: MODULE, type: 'ready' }, STATION_ORIGIN);
