@@ -22,7 +22,8 @@ export function MastersonPractice({ lang }: { lang: 'ru' | 'en' }) {
   const ru = lang === 'ru';
   const [pressure, setPressure] = useState(0);
   const [state, setState] = useState<PracticeState>(() => createPractice());
-  const [saved, setSaved] = useState<number | null>(null);
+  /** The score once the session ended, and whether it reached the station's summary. */
+  const [saved, setSaved] = useState<{ score: number; ok: boolean } | null>(null);
   const pressureRef = useRef(0);
   pressureRef.current = pressure;
   const embedded = typeof window !== 'undefined' && embeddedNow();
@@ -41,8 +42,7 @@ export function MastersonPractice({ lang }: { lang: 'ru' | 'en' }) {
   useEffect(() => {
     if (state.phase === 'released' && saved === null) {
       const sc = score(state);
-      recordPractice(PRACTICE.itemId, sc);
-      setSaved(sc);
+      setSaved({ score: sc, ok: recordPractice(PRACTICE.itemId, sc) });
     }
   }, [state, saved]);
 
@@ -172,11 +172,25 @@ export function MastersonPractice({ lang }: { lang: 'ru' | 'en' }) {
 
       {phase === 'released' && (
         <div data-testid="practice-result" className="rounded-xl border border-[#2B4C3F] bg-[#2B4C3F]/5 p-3 space-y-3">
-          <p className="text-sm text-[#1E2421]">
-            {ru
-              ? `Сеанс завершён: ${saved ?? score(state)} баллов. Результат внесён в Студенческий билет.`
-              : `Session complete: ${saved ?? score(state)} points. The result is in the student ID.`}
+          <p className="text-sm text-[#1E2421]" data-testid="practice-saved" data-ok={saved?.ok ? '1' : '0'}>
+            {saved && !saved.ok
+              ? ru
+                ? `Сеанс завершён: ${saved.score} баллов, но результат не записался в Студенческий билет — память браузера недоступна.`
+                : `Session complete: ${saved.score} points, but the result did not reach the student ID — browser storage is unavailable.`
+              : ru
+                ? `Сеанс завершён: ${saved?.score ?? score(state)} баллов. Результат внесён в Студенческий билет.`
+                : `Session complete: ${saved?.score ?? score(state)} points. The result is in the student ID.`}
           </p>
+          {saved && !saved.ok && (
+            <button
+              type="button"
+              data-testid="practice-retry-save"
+              onClick={() => setSaved({ score: saved.score, ok: recordPractice(PRACTICE.itemId, saved.score) })}
+              className="min-h-[44px] px-4 rounded-lg border border-slate-300 text-sm font-semibold text-[#1E2421] cursor-pointer"
+            >
+              {ru ? 'Записать ещё раз' : 'Save again'}
+            </button>
+          )}
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={restart} className="min-h-[44px] px-4 rounded-lg border border-slate-300 text-sm font-semibold text-[#1E2421] cursor-pointer">
               {ru ? 'Ещё один сеанс' : 'Another session'}
