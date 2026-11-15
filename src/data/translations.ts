@@ -4,6 +4,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
   en: {
     appName: 'Masterson Case Digital',
     navCaseEditor: 'Evaluation',
+    navPractice: 'Practice',
     newSession: '+ New Session',
     newHorse: '+ New Horse',
     deleteDemo: 'Delete Demo Case',
@@ -104,6 +105,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
   ru: {
     appName: 'Masterson Case Digital',
     navCaseEditor: 'Оценка',
+    navPractice: 'Практика',
     newSession: '+ Новая сессия',
     newHorse: '+ Новая лошадь',
     deleteDemo: 'Удалить демо-кейс',
